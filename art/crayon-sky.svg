@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 190" fill="none">
+<g stroke-linecap="round" stroke-linejoin="round">
+<g stroke="#a7d7ed" stroke-width="5" opacity=".9"><path d="M144 60q17-24 37-8 8-30 32-26 25 1 31 29 24-6 34 13 8 19-21 21H157q-32-4-13-29Z"/><path d="M904 64q15-21 33-10 6-29 32-28 24 1 30 28 24-7 34 13 9 19-19 21H919q-31-4-15-24Z"/></g>
+<g stroke="#edbc47" stroke-width="7"><circle cx="728" cy="64" r="30" fill="#fff5af"/><path d="M728 11v14m0 80v14m-52-55h16m73 0h17m-91-36 12 12m54 50 12 12m0-74-12 12m-54 50-12 12"/></g>
+<g stroke="#b5ce8a" stroke-width="6"><path d="M0 151q94-41 194 2t220 0q93-36 198 0t198-2q99-38 197 1t193-1"/><path d="M0 174q150-28 270 0t281-2q132-23 264 1t385-5" stroke-width="10" opacity=".3"/></g>
+<g stroke="#d5a56a" stroke-width="5"><path d="M63 120h65v55H63z" fill="#fff1ce"/><path d="m53 120 42-34 43 34" fill="#ffc992"/><path d="M90 175v-31h15v31" fill="#d7ad83"/><path d="M70 139h12v13H70z" fill="#d9f1ff"/></g>
+<g stroke="#89b97d" stroke-width="5"><path d="M1103 169v-51"/><path d="M1103 136q-26-28-44-12t2 31q21 8 42-19Zm0 0q23-31 44-12t-9 33q-21 5-35-21Z" fill="#b4dc93"/></g>
+</g></svg>

@@ -22,10 +22,8 @@ const SVG_ICONS={
   settings:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.3"></circle><path d="M19.4 15a1 1 0 00.2 1.1l.1.1a2 2 0 01-2.8 2.8l-.1-.1a1 1 0 00-1.1-.2 1 1 0 00-.6.9V20a2 2 0 01-4 0v-.2a1 1 0 00-.6-.9 1 1 0 00-1.1.2l-.1.1a2 2 0 01-2.8-2.8l.1-.1a1 1 0 00.2-1.1 1 1 0 00-.9-.6H4a2 2 0 010-4h.2a1 1 0 00.9-.6 1 1 0 00-.2-1.1l-.1-.1a2 2 0 012.8-2.8l.1.1a1 1 0 001.1.2 1 1 0 00.6-.9V4a2 2 0 014 0v.2a1 1 0 00.6.9 1 1 0 001.1-.2l.1-.1a2 2 0 012.8 2.8l-.1.1a1 1 0 00-.2 1.1 1 1 0 00.9.6H20a2 2 0 010 4h-.2a1 1 0 00-.9.6z"></path></svg>`,
   search:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="5.5"></circle><path d="M15 15l5 5"></path></svg>`,
   calendar:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="3"></rect><path d="M8 3.8v3.4M16 3.8v3.4M4 9h16"></path></svg>`,
-  edit:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16v4z"></path><path d="M12 6l4 4"></path></svg>`,
   arrow:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>`
 };
-function memberArt(code,label=''){if(/^portrait-(?:0[1-9]|1[0-5])$/.test(String(code||'')))return `<img class="portrait-img" src="avatars/${esc(code)}.webp" alt="${esc(label)}" loading="lazy">`;return iconMarkup(code||'person','lg',label)}
 function iconMarkup(name,size='md',label=''){const aliases={'🏦':'bank','🛍️':'shop','💬':'social','🏛️':'gov','📧':'email','🎮':'game','🏠':'home','🔐':'other','✨':'all','🙂':'person','👨‍👩‍👧‍👦':'group','👨‍👩‍👧':'group','☁️':'cloud'};const svg=SVG_ICONS[aliases[name]||name];if(svg)return `<span class="svgicon ${size}"${label?` aria-label="${esc(label)}"`:''}>${svg}</span>`;return `<span class="emoji-fallback">${esc(name||'•')}</span>`}
 
 // IndexedDB stores only encrypted envelopes and the non-secret profile index.
@@ -87,11 +85,15 @@ const CLOUD_MAX_RETRIES=2;
 function isRetryableCloudError(e){return /網路|連線中斷|Failed to fetch|NetworkError|Google API (429|500|502|503|504)/i.test(String(e?.message||e))}
 function cloudDelay(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 async function retryCloudRead(task){let last;for(let attempt=0;attempt<=CLOUD_MAX_RETRIES;attempt++){try{return await task()}catch(e){last=e;if(!isRetryableCloudError(e)||attempt===CLOUD_MAX_RETRIES)break;await cloudDelay(700*(attempt+1))}}throw last}
-function markBackupError(err){setCloudPrefs({lastError:String(err.message||err).slice(0,180)});updateCloudStatus('⚠️ 雲端備份未成功：'+String(err.message||err).slice(0,115))}
-function refreshRecoveryUI(){const hint=$('connectionHint');if(hint)hint.textContent=googleEmail?'已授權：'+googleEmail:'尚未授權 Google，請先連線'}
+function refreshRecoveryUI(){} // File import is available directly from the locked screen.
 function stopAutoBackup(){if(autoBackupTimer)clearTimeout(autoBackupTimer);autoBackupTimer=null}
-function queueAutoBackup(){stopAutoBackup();if(!vault||!activeProfileId||!cloudPrefs().auto||cloudPrefs().autoPaused)return;updateCloudStatus();autoBackupTimer=setTimeout(async()=>{autoBackupTimer=null;if(!vault||!cloudPrefs().auto||cloudPrefs().autoPaused)return;if(!token||googleEmail!==selectedProfile()?.googleEmail){updateCloudStatus('待連接 Google；本機已加密儲存');return}try{await uploadCloud(true)}catch(e){markBackupError(e);notify('自動備份未完成，可在設定頁手動重試')}},3500)}
-function updateCloudStatus(note){const el=$('backupStatus');if(!el)return;const pref=cloudPrefs();let line=note|| (pref.lastBackup?'上次成功雲端備份：'+new Date(pref.lastBackup).toLocaleString('zh-TW',{hour12:false}):'這個使用者尚無成功備份紀錄');if(vault&&pref.lastLocalChange&&(!pref.lastBackup||pref.lastLocalChange>pref.lastBackup))line+=' · 本機有尚未備份的修改';if(pref.lastError)line+=' · 上次失敗：'+pref.lastError;el.textContent=line;const retry=$('retryBackup');if(retry)retry.disabled=cloudBusy||!vault;const sw=$('autoBackup');if(sw)sw.checked=!!pref.auto;}
+function queueAutoBackup(){} // No OAuth, no unattended cloud access.
+function updateCloudStatus(){
+ const node=$('backupStatus');if(!node)return;
+ const state=cloudPrefs();let out=state.lastExport?'上次產生加密檔：'+new Date(state.lastExport).toLocaleString('zh-TW',{hour12:false}):'尚未記錄在此裝置產生備份檔';
+ if(state.lastLocalChange&&(!state.lastExport||state.lastLocalChange>state.lastExport))out+=' · 此後有本機修改，建議重新匯出';
+ out+='。請自行確認檔案已存到自己的 Google Drive；系統無法確認雲端上傳。';node.textContent=out;
+}
 
 function selectedProfile(){return profiles.find(p=>p.id===activeProfileId)}
 async function saveProfiles(){await safeWrite(PROFILES_KEY,JSON.stringify(profiles))}
@@ -123,11 +125,11 @@ function clearSensitiveUI(){
  for(const id of ['rPassword','rTransactionPassword','rSecurityAnswer','rSecurityPin']){const node=$(id);if(node)node.type='password'}
  $('app').classList.remove('recovery-mode');
 }
-function showProfilePicker(){$('master').value='';$('masterConfirm').value='';vault=null;masterKey=null;encryptionSalt=null;token=null;googleEmail=null;tokenClient=null;pendingCloudAction=null;activeProfileId=null;stopAutoBackup();clearSensitiveUI();
+function showProfilePicker(){$('master').value='';$('masterConfirm').value='';vault=null;masterKey=null;encryptionSalt=null;activeProfileId=null;stopAutoBackup();clearSensitiveUI();
  $('gate').classList.add('hidden');$('app').classList.add('hidden');$('profilePicker').classList.remove('hidden');$('lockBtn').classList.add('hidden');
  $('profileCreateForm').classList.add('hidden');$('profileCreateError').classList.add('hidden');$('profileList').innerHTML=profiles.length?profiles.map(p=>`<button class="profile-choice" data-profile="${esc(p.id)}"><span class="ricon">${iconMarkup(p.icon||'vault')}</span><span class="rinfo"><strong>${esc(p.name)}</strong><small>獨立主密碼 · 獨立加密資料</small></span><span class="chevron">${iconMarkup('arrow','sm')}</span></button>`).join(''):'<p class="hint">首次使用請建立您的私人保險箱。</p>';
  $('profileList').querySelectorAll('[data-profile]').forEach(b=>b.onclick=()=>chooseProfile(b.dataset.profile));refreshRecoveryUI();}
-function chooseProfile(id){stopAutoBackup();if(!profiles.some(p=>p.id===id))return;activeProfileId=id;token=null;googleEmail=null;tokenClient=null;pendingCloudAction=null;
+function chooseProfile(id){stopAutoBackup();if(!profiles.some(p=>p.id===id))return;activeProfileId=id;
  $('profilePicker').classList.add('hidden');$('profileName').textContent=selectedProfile().name;gateMode();refreshRecoveryUI()}
 function creationError(message,target='profileCreateError') {const el=$(target);if(el){el.textContent=message;el.classList.remove('hidden')}notify(message)}
 function checkLocalSecurity(){
@@ -146,7 +148,7 @@ $('profileCreateForm').onsubmit=async e=>{e.preventDefault();const name=$('newPr
  }catch(err){creationError(err.message||'建立使用者失敗，請檢查瀏覽器儲存權限')}};
 $('switchFromGate').onclick=async()=>{if(await settleCurrentWrites())showProfilePicker()};
 $('switchProfile').onclick=async()=>{if(!confirm('切換使用者前將鎖定目前保險箱，確定切換？'))return;if(!await settleCurrentWrites())return;for(const d of document.querySelectorAll('dialog[open]'))d.close();showProfilePicker()};
-let vault=null, masterKey=null, encryptionSalt=null, selectedCat='all', selectedRecord=null, token=null, tokenClient=null, pendingCloudAction=null, lastActive=Date.now();let smallMode='member', smallEditId='';
+let vault=null, masterKey=null, encryptionSalt=null, selectedCat='all', selectedRecord=null, token=null, tokenClient=null, pendingCloudAction=null, lastActive=Date.now();let smallMode='member';
 const uid=()=>crypto.randomUUID();const today=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
 const fmt=d=>d?new Date(d+'T12:00:00').toLocaleDateString('zh-TW'):'未設定';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -179,7 +181,7 @@ async function persist(){
 function gateMode(){if(!activeProfileId)return showProfilePicker();$('gateError').classList.add('hidden');const exists=!!getEnvelope();$('gateTitle').textContent=exists?'解鎖私人保險箱':'建立私人保險箱';$('gateDesc').textContent=exists?'輸入此使用者的主密碼。':'請為這位使用者設定獨立的主密碼（至少 12 字元）。';$('confirmWrap').classList.toggle('hidden',exists);$('gateBtn').textContent=exists?'解鎖保險箱':'建立加密資料庫';$('app').classList.add('hidden');$('gate').classList.remove('hidden');$('lockBtn').classList.add('hidden');}
 async function lock(){if(!await settleCurrentWrites())return;stopAutoBackup();clearSensitiveUI();vault=null;masterKey=null;encryptionSalt=null;selectedRecord=null;$('master').value='';$('masterConfirm').value='';for(const d of document.querySelectorAll('dialog[open]'))d.close();gateMode();notify('已安全鎖定');}
 async function unlock(password){const obj=getEnvelope();const result=await dec(obj,password);vault=result.data;masterKey=result.key;encryptionSalt=result.salt;$('gate').classList.add('hidden');$('app').classList.remove('hidden');$('app').classList.remove('recovery-mode');$('lockBtn').classList.remove('hidden');lastActive=Date.now();selectedCat='all';render();$('master').value='';$('masterConfirm').value='';refreshRecoveryUI();notify('已解鎖');}
-$('gateBtn').onclick=async()=>{const p=$('master').value;$('gateError').classList.add('hidden');if(!p)return creationError('請輸入主密碼','gateError');$('gateBtn').disabled=true;try{checkLocalSecurity();$('gateBtn').textContent='正在加密處理…';if(getEnvelope()){await unlock(p)}else{if(p.length<12)throw Error('主密碼至少需要 12 字元');if(p!==$('masterConfirm').value)throw Error('兩次輸入的主密碼不一致');encryptionSalt=crypto.getRandomValues(new Uint8Array(16));masterKey=await deriveKey(p,encryptionSalt);vault=emptyVault();await persist();$('gate').classList.add('hidden');$('app').classList.remove('hidden');$('lockBtn').classList.remove('hidden');render();$('master').value='';$('masterConfirm').value='';notify('加密保險箱建立成功')}}catch(e){if(!getEnvelope()){vault=null;masterKey=null;encryptionSalt=null}creationError(String(e.message||'建立失敗').includes('decrypt')?'主密碼不正確':(e.message||'建立失敗'),'gateError')}finally{$('gateBtn').disabled=false;$('gateBtn').textContent=getEnvelope()?'解鎖保險箱':'建立加密資料庫'}};
+$('gateBtn').onclick=async()=>{const p=$('master').value;$('gateError').classList.add('hidden');if(!p)return creationError('請輸入主密碼','gateError');$('gateBtn').disabled=true;try{checkLocalSecurity();$('gateBtn').textContent='正在加密處理…';if(getEnvelope()){await unlock(p)}else{if(p.length<12)throw Error('主密碼至少需要 12 字元');if(p!==$('masterConfirm').value)throw Error('兩次輸入的主密碼不一致');encryptionSalt=crypto.getRandomValues(new Uint8Array(16));masterKey=await deriveKey(p,encryptionSalt);vault=emptyVault();await persist();$('gate').classList.add('hidden');$('app').classList.remove('hidden');$('lockBtn').classList.remove('hidden');render();$('master').value='';$('masterConfirm').value='';notify('加密保險箱建立成功')}}catch(e){creationError(String(e.message||'建立失敗').includes('decrypt')?'主密碼不正確':(e.message||'建立失敗'),'gateError')}finally{$('gateBtn').disabled=false;$('gateBtn').textContent=getEnvelope()?'解鎖保險箱':'建立加密資料庫'}};
 $('lockBtn').onclick=lock;
 ['click','keydown','touchstart'].forEach(ev=>document.addEventListener(ev,()=>{if(vault)lastActive=Date.now()},{passive:true}));setInterval(()=>{if(vault&&Date.now()-lastActive>300000)lock()},15000);
 function mname(id){return vault.members.find(x=>x.id===id)?.name||'未分類'}function cname(id){return vault.categories.find(x=>x.id===id)?.name||'其他'}function cat(id){return vault.categories.find(x=>x.id===id)||DEFAULT_CATS[7]}
@@ -191,34 +193,7 @@ function renderSelects(){const mf=$('memberFilter');const old=mf.value;mf.innerH
 function card(r){const c=cat(r.category);return `<button class="record" data-rec="${esc(r.id)}"><span class="ricon" style="background:${/^#[0-9a-fA-F]{6}$/.test(c.color)?c.color:'#eef4f8'}">${iconMarkup(c.icon,'md',c.name)}</span><span class="rinfo"><strong>${esc(r.title)}</strong><small>${esc(mname(r.member))} · ${esc(r.username||'未填帳號')}${r.due&&r.due<=today()?' · 待檢查':''}</small></span><span class="chevron">${iconMarkup('arrow','sm')}</span></button>`;}
 function bindCards(el){el.querySelectorAll('[data-rec]').forEach(b=>b.onclick=()=>showDetail(b.dataset.rec));}
 function renderRecords(){if(!vault)return;const q=$('search').value.trim().toLowerCase(),member=$('memberFilter').value||'all';$('listTitle').textContent=selectedCat==='all'?'全部帳號':cname(selectedCat);const items=vault.records.filter(r=>(selectedCat==='all'||r.category===selectedCat)&&(member==='all'||r.member===member)&&[r.title,r.username,r.note].some(s=>String(s||'').toLowerCase().includes(q))).sort((a,b)=>a.title.localeCompare(b.title,'zh-Hant'));$('records').innerHTML=items.length?items.map(card).join(''):'<div class="empty">🌱 還沒有符合條件的帳號，點選「新增帳號」開始整理。</div>';bindCards($('records'));}
-function renderMembers(){
- const members=vault.members;
- $('members').innerHTML=members.map((m,i)=>{
-  const count=vault.records.filter(r=>r.member===m.id).length;
-  const locked=m.id==='self'||m.id==='family';
-  return `<div class="member crayon-member member-variant-${i%6}" data-member="${esc(m.id)}"><span class="ricon crayon-ricon">${memberArt(m.icon||'person',m.name)}</span><span class="rinfo"><strong>${esc(m.name)}</strong><small>${count} 筆帳號${locked?' · 系統預設成員':''}</small></span><span class="member-actions"><button type="button" class="soft sm member-order" data-move-member="${esc(m.id)}" data-direction="-1" aria-label="${esc(m.name)}上移" ${i===0?'disabled':''}>↑</button><button type="button" class="soft sm member-order" data-move-member="${esc(m.id)}" data-direction="1" aria-label="${esc(m.name)}下移" ${i===members.length-1?'disabled':''}>↓</button><button type="button" class="soft sm member-edit-btn" data-edit-member="${esc(m.id)}">${iconMarkup('edit','sm','編輯')} 編輯</button>${locked?'':`<button type="button" class="soft sm member-delete-btn" data-delete-member="${esc(m.id)}" aria-label="刪除${esc(m.name)}">刪除</button>`}</span></div>`;
- }).join('');
- $('members').querySelectorAll('[data-edit-member]').forEach(b=>b.onclick=()=>openSmall('member',b.dataset.editMember));
- $('members').querySelectorAll('[data-move-member]').forEach(b=>b.onclick=()=>moveMember(b.dataset.moveMember,Number(b.dataset.direction)));
- $('members').querySelectorAll('[data-delete-member]').forEach(b=>b.onclick=()=>deleteMemberSafely(b.dataset.deleteMember));
-}
-async function moveMember(id,delta){
- if(!vault)return;
- const index=vault.members.findIndex(m=>m.id===id),target=index+delta;
- if(index<0||target<0||target>=vault.members.length)return;
- const before=vault.members.slice();
- [vault.members[index],vault.members[target]]=[vault.members[target],vault.members[index]];
- try{await persist();renderMembers();renderSelects();notify('成員順序已儲存')}catch(e){vault.members=before;renderMembers();notify('排序未儲存：'+e.message)}
-}
-async function deleteMemberSafely(id){
- if(!vault||id==='self'||id==='family')return notify('預設成員只能編輯，不能刪除');
- const member=vault.members.find(m=>m.id===id);if(!member)return;
- const related=vault.records.filter(r=>r.member===id);
- if(related.length)return notify(`「${member.name}」還有 ${related.length} 筆帳號，請先將帳號改到其他成員後再刪除`);
- if(!confirm(`確定刪除成員「${member.name}」？這只刪除成員分類，不會刪除任何帳號。`))return;
- const before=vault.members.slice();vault.members=vault.members.filter(m=>m.id!==id);
- try{await persist();render();notify('成員已刪除')}catch(e){vault.members=before;render();notify('刪除未儲存：'+e.message)}
-}
+function renderMembers(){$('members').innerHTML=vault.members.map(m=>`<div class="member"><span class="ricon">${iconMarkup(m.icon||'person','md',m.name)}</span><span class="rinfo"><strong>${esc(m.name)}</strong><small>${vault.records.filter(r=>r.member===m.id).length} 筆帳號</small></span></div>`).join('');}
 function renderDue(){const items=vault.records.filter(r=>r.due&&r.due<=today());$('dueList').innerHTML=items.length?items.map(card).join(''):'<div class="empty">🌷 目前沒有到期需要檢查的帳號。</div>';bindCards($('dueList'));}
 $('search').oninput=renderRecords;$('memberFilter').onchange=renderRecords;
 function openEdit(id=null){const r=id?vault.records.find(x=>x.id===id):null;$('editHeading').textContent=r?'編輯帳號':'新增帳號';$('editId').value=r?.id||'';$('rTitle').value=r?.title||'';$('rUser').value=r?.username||'';$('rPassword').value=r?.password||'';$('rPassword').type='password';$('rTransactionPassword').value=r?.transactionPassword||'';$('rTransactionPassword').type='password';$('rTransactionChanged').value=r?.transactionChanged||'';$('rUrl').value=r?.url||'';$('rChanged').value=r?.changed||today();$('rDue').value=r?.due||'';$('rNote').value=r?.note||'';$('rSecurityQuestion').value=r?.securityQuestion||'';$('rSecurityAnswer').value=r?.securityAnswer||'';$('rSecurityAnswer').type='password';$('rSecurityPin').value=r?.securityPin||'';$('rSecurityPin').type='password';$('rSecurityPinChanged').value=r?.securityPinChanged||'';$('rRecoveryContact').value=r?.recoveryContact||'';$('rRecoveryCodes').value=r?.recoveryCodes||'';$('rRecoveryCodes').classList.remove('recovery-visible');$('toggleRecoveryCodes').textContent='顯示';document.querySelectorAll('[data-toggle-secret]').forEach(b=>b.textContent='顯示');renderSelects();$('rMember').value=r?.member||'self';$('rCategory').value=r?.category||(selectedCat==='all'?'other':selectedCat);$('advancedSecurity').open=false;markEditPristine();$('editDialog').showModal();}
@@ -240,210 +215,50 @@ function showDetail(id){const r=vault.records.find(x=>x.id===id);if(!r)return;se
 $('detailContent').querySelectorAll('[data-show]').forEach(b=>b.onclick=()=>{const element=$(b.dataset.show);const secret=recordSecretValue(r,b.dataset.show);element.textContent=element.textContent===secret?'••••••••':secret;b.textContent=element.textContent===secret?'隱藏':'顯示'});
 $('detailContent').querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>{const secret=recordSecretValue(r,b.dataset.copy);copySecret(secret)});
 const copyuser=$('detailContent').querySelector('[data-copyuser]');if(copyuser)copyuser.onclick=()=>copySecret(r.username);$('detailDialog').showModal();}
-async function copySecret(v){try{await navigator.clipboard.writeText(v||'');notify('已複製到剪貼簿；使用後請清除剪貼簿')}catch{notify('無法複製，請使用 HTTPS 網址開啟')}}
+async function copySecret(v){try{await navigator.clipboard.writeText(v||'');notify('已複製；使用後請自行清除剪貼簿，其他應用程式可能讀取')}catch{notify('無法複製，請使用 HTTPS 網址開啟')}}
 $('editRecord').onclick=()=>{$('detailDialog').close();openEdit(selectedRecord)};
 $('deleteRecord').onclick=async()=>{if(!vault||!selectedRecord)return;if(!confirm('確定永久刪除這筆帳號及全部舊密碼歷史？'))return;const prior=vault.records;vault.records=vault.records.filter(x=>x.id!==selectedRecord);try{await persist();$('detailDialog').close();render();notify('帳號已刪除')}catch(e){vault.records=prior;notify('刪除失敗：'+e.message)}};
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close());
-const MEMBER_ICON_CHOICES=[['portrait-01', '男孩'],['portrait-02', '爸爸'],['portrait-03', '媽媽'],['portrait-04', '兒子'],['portrait-05', '女兒'],['portrait-06', '爺爺'],['portrait-07', '奶奶'],['portrait-08', '小男孩'],['portrait-09', '小女孩'],['portrait-10', '寶寶'],['portrait-11', '阿姨'],['portrait-12', '叔叔'],['portrait-13', '姐姐'],['portrait-14', '哥哥'],['portrait-15', '家人'],[ 'person','線條人物'],['group','家庭共用'],['👨','原版爸爸'],['👩','原版媽媽'],['👦','原版兒子'],['👧','原版女兒']];
-const CATEGORY_ICON_CHOICES=[['bank','銀行'],['shop','購物'],['social','社群'],['gov','政府'],['email','郵件'],['game','娛樂'],['home','居家'],['other','安全'],['cloud','雲端'],['calendar','日曆'],['🩺','健康'],['🚗','交通'],['📚','學習'],['💳','支付'],['🔑','鑰匙'],['⭐','其他']];
-function buildIconPicker(mode,selectedCode){
- const choices=mode==='member'?MEMBER_ICON_CHOICES:CATEGORY_ICON_CHOICES;
- const grid=$('smallIconGrid');grid.innerHTML=choices.map(([code,label],idx)=>`<button type="button" class="icon-choice crayon-choice variant-${idx%6}" data-icon-code="${esc(code)}" aria-label="${esc(label)}" aria-pressed="false"><span class="icon-art crayon-art">${mode==='member'?memberArt(code,label):iconMarkup(code,'lg',label)}</span><span class="icon-label">${esc(label)}</span></button>`).join('');
- const choose=code=>{$('smallEmoji').value=code;grid.querySelectorAll('.icon-choice').forEach(b=>{const active=b.dataset.iconCode===code;b.classList.toggle('selected',active);b.setAttribute('aria-pressed',String(active));});};
- grid.querySelectorAll('.icon-choice').forEach(b=>b.onclick=()=>choose(b.dataset.iconCode));choose(selectedCode||(mode==='member'?'portrait-01':'other'));
-}
-function openSmall(mode,editId=''){smallMode=mode;smallEditId=editId||'';const isEdit=!!smallEditId;const kind=mode==='member'?'members':'categories';const current=isEdit?vault[kind].find(x=>x.id===smallEditId):null;$('smallHeading').textContent=mode==='member'?(isEdit?'修改家庭成員':'新增家庭成員'):(isEdit?'修改帳號分類':'自訂帳號分類');$('smallLabel').textContent=mode==='member'?'成員稱呼':'分類名稱';$('smallIconLabel').textContent=mode==='member'?'選擇成員圖案':'選擇分類圖案';$('smallName').value=current?.name||'';$('smallSubmit').textContent=isEdit?'儲存修改':'儲存';buildIconPicker(mode,current?.icon);$('smallDialog').showModal();}
+function openSmall(mode){smallMode=mode;$('smallHeading').textContent=mode==='member'?'新增家庭成員':'自訂帳號分類';$('smallLabel').textContent=mode==='member'?'成員稱呼':'分類名稱';$('smallName').value='';$('smallEmoji').value='';$('smallDialog').showModal();}
 $('addMember').onclick=()=>openSmall('member');$('addCategory').onclick=()=>openSmall('category');
-$('smallForm').onsubmit=async e=>{e.preventDefault();const name=$('smallName').value.trim();if(!name)return;const icon=$('smallEmoji').value.trim()||(smallMode==='member'?'portrait-01':'other');const kind=smallMode==='member'?'members':'categories';const btn=$('smallSubmit');btn.disabled=true;const isEdit=!!smallEditId;let item=null,before=null;try{if(isEdit){item=vault[kind].find(x=>x.id===smallEditId);if(!item)throw Error('找不到要修改的項目');before=structuredClone(item);item.name=name;item.icon=icon;}else{item=kind==='members'?{id:uid(),name,icon}:{id:uid(),name,icon,color:'#e7f0f4'};vault[kind].push(item);}await persist();$('smallDialog').close();render();notify(isEdit?'已修改':'已新增')}catch(err){if(isEdit&&item&&before)Object.assign(item,before);else if(!isEdit&&item)vault[kind]=vault[kind].filter(x=>x.id!==item.id);notify((isEdit?'修改失敗，未保存變更：':'新增失敗，未保存變更：')+err.message)}finally{btn.disabled=false;smallEditId='';}};
-function downloadFile(obj){const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='拾光家庭密碼管家_加密備份_'+today()+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000)}
-$('exportBtn').onclick=async()=>{try{if(activeProfileId&&saveChains.get(activeProfileId))await saveChains.get(activeProfileId);const e=getEnvelope();if(!e)return notify('尚無資料');downloadFile(e);notify('已產生加密備份檔')}catch(err){notify('匯出失敗：'+err.message)}};
-async function restoreObject(obj){if(!await settleCurrentWrites())throw Error('本機資料尚未儲存成功，已取消還原');if(!validateEnvelope(obj))throw Error('不是有效的拾光加密備份');const pass=prompt('請輸入「備份檔」原本的主密碼，用於驗證加密資料：');if(pass===null)return;const restoreProfile=activeProfileId;const parsed=await dec(obj,pass);if(restoreProfile!==activeProfileId)throw Error('還原期間使用者已切換');if(!confirm('備份解密成功。還原會覆蓋目前裝置的全部帳號與密碼歷史，且無法復原。確定繼續？'))return;const prior=getEnvelope()?JSON.stringify(getEnvelope()):null;if(prior&&prior!==JSON.stringify(obj)){const rollbackKey='shiguang-vault-restore-safety-'+activeProfileId+'-'+Date.now()+'-'+crypto.randomUUID();try{await safeWrite(rollbackKey,prior)}catch{throw Error('無法儲存還原前的安全副本，已取消還原。請先匯出本機加密備份，勿清除網站資料。')}}await saveEnvelope(restoreProfile,obj);vault=parsed.data;masterKey=parsed.key;encryptionSalt=parsed.salt;setCloudPrefs({lastLocalChange:new Date().toISOString()});stopAutoBackup();setCloudPrefs({autoPaused:true,lastError:''});updateCloudStatus('已還原資料；自動備份暫停，請先核對資料再手動備份');$('gate').classList.add('hidden');$('app').classList.remove('hidden');$('lockBtn').classList.remove('hidden');$('app').classList.remove('recovery-mode');render();tab('records');notify('加密備份已成功還原');return true;}
+$('smallForm').onsubmit=async e=>{e.preventDefault();const name=$('smallName').value.trim();if(!name)return;const icon=$('smallEmoji').value.trim()||(smallMode==='member'?'person':'other');const kind=smallMode==='member'?'members':'categories';const item=kind==='members'?{id:uid(),name,icon}:{id:uid(),name,icon,color:'#e7f0f4'};const btn=$('smallForm').querySelector('[type=submit]');btn.disabled=true;vault[kind].push(item);try{await persist();$('smallDialog').close();render();notify('已新增')}catch(err){vault[kind]=vault[kind].filter(x=>x.id!==item.id);notify('新增失敗，未保存變更：'+err.message)}finally{btn.disabled=false}};
+function backupFilename(){
+ const d=new Date(), pad=n=>String(n).padStart(2,'0');
+ return `拾光密碼_加密備份_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.json`;
+}
+function encryptedBlob(obj){return new Blob([JSON.stringify(obj,null,2)],{type:'application/json'})}
+function downloadFile(obj){const blob=encryptedBlob(obj),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=backupFilename();document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),15000)}
+async function backupEnvelope(){
+ if(!vault||!activeProfileId)throw Error('請先解鎖自己的保險箱');
+ if(!await settleCurrentWrites())throw Error('目前有儲存尚未完成，請稍後再試');
+ const obj=getEnvelope();if(!validateEnvelope(obj))throw Error('本機尚無有效的加密備份資料');
+ // Verify that the persisted ciphertext is decryptable with the current active key,
+ // and that the latest saved snapshot matches the currently unlocked vault.
+ const raw=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(obj.iv)},masterKey,unb64(obj.data));
+ const disk=JSON.parse(new TextDecoder().decode(raw));
+ if(!validateVault(disk))throw Error('已儲存的加密檔資料格式異常，取消匯出');
+ if(JSON.stringify({...disk,updatedAt:null})!==JSON.stringify({...vault,updatedAt:null}))throw Error('本機資料與已加密儲存內容不一致，請重新儲存後再備份');
+ return obj;
+}
+function markExport(){setCloudPrefs({lastExport:new Date().toISOString()});updateCloudStatus()}
+$('exportBtn').onclick=async()=>{try{const obj=await backupEnvelope();downloadFile(obj);markExport();notify('已產生加密檔，請確認下載完成並自行存進 Google Drive')}catch(err){notify('匯出失敗：'+err.message)}};
+$('shareBackup').onclick=async()=>{
+ try{
+  const obj=await backupEnvelope();const file=new File([encryptedBlob(obj)],backupFilename(),{type:'application/json'});
+  if(!navigator.share||!navigator.canShare?.({files:[file]})){
+   downloadFile(obj);markExport();notify('此裝置不支援檔案分享，已改用下載；請自行上傳 Google Drive');return;
+  }
+  await navigator.share({files:[file],title:'拾光密碼管家加密備份'});
+  markExport();notify('已交給系統分享功能，請確認 Google Drive 實際儲存成功');
+ }catch(e){if(e.name==='AbortError')return;notify('分享未完成：'+e.message)}
+};
+
+async function restoreObject(obj){if(!await settleCurrentWrites())throw Error('本機資料尚未儲存成功，已取消還原');if(!validateEnvelope(obj))throw Error('不是有效的拾光加密備份');const pass=prompt('請輸入「備份檔」原本的主密碼，用於驗證加密資料：');if(pass===null)return;const restoreProfile=activeProfileId;const parsed=await dec(obj,pass);if(restoreProfile!==activeProfileId)throw Error('還原期間使用者已切換');if(!confirm('備份解密成功。還原會覆蓋目前裝置的全部帳號與密碼歷史，；系統將先保留現有加密安全副本。確定繼續？'))return;const prior=getEnvelope()?JSON.stringify(getEnvelope()):null;if(prior&&prior!==JSON.stringify(obj)){const rollbackKey='shiguang-vault-restore-safety-'+activeProfileId+'-'+Date.now()+'-'+crypto.randomUUID();try{await safeWrite(rollbackKey,prior)}catch{throw Error('無法儲存還原前的安全副本，已取消還原。請先匯出本機加密備份，勿清除網站資料。')}}await saveEnvelope(restoreProfile,obj);vault=parsed.data;masterKey=parsed.key;encryptionSalt=parsed.salt;setCloudPrefs({lastLocalChange:new Date().toISOString(),lastExport:null});stopAutoBackup();updateCloudStatus();$('gate').classList.add('hidden');$('app').classList.remove('hidden');$('lockBtn').classList.remove('hidden');$('app').classList.remove('recovery-mode');render();tab('records');notify('加密備份已成功還原');return true;}
 for(const id of ['importFile','gateFile'])$(id).onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>12000000){notify('備份檔太大');return}try{await restoreObject(JSON.parse(await f.text()))}catch(err){notify('還原失敗：'+(err.name==='OperationError'?'主密碼不正確或備份已損壞':err.message))}finally{e.target.value=''}};
 $('importBtn').onclick=()=>$('importFile').click();$('gateImport').onclick=()=>$('gateFile').click();
-$('changeMaster').onclick=async()=>{if(saveChains.get(activeProfileId))await saveChains.get(activeProfileId);const p=prompt('輸入新的主密碼（至少 12 字元）');if(p===null)return;if(p.length<12)return notify('至少 12 字元');const p2=prompt('再次輸入新的主密碼');if(p!==p2)return notify('兩次輸入不一致');if(!confirm('更換主密碼後，舊雲端備份仍使用舊密碼。請立即重新上傳最新備份。確定更換？'))return;const newSalt=crypto.getRandomValues(new Uint8Array(16)),newKey=await deriveKey(p,newSalt);const oldKey=masterKey,oldSalt=encryptionSalt;encryptionSalt=newSalt;masterKey=newKey;try{await persist();notify('主密碼已變更；請立即重新備份')}catch(e){masterKey=oldKey;encryptionSalt=oldSalt;notify('主密碼更換失敗：'+e.message)}};
-// Google OAuth: access token is held in memory, never saved locally.
-const DRIVE_NAME='shiguang-personal-vault.enc.json';
-const SNAPSHOT_PREFIX='shiguang-personal-vault-backup-';
-const BACKUP_LIMIT=30; // list up to 30 recent snapshots; never automatically delete backups
-const OAUTH_CLIENT_RE=/^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/;
-function oauthClientError(v){
- if(!v)return '請先在 Google Cloud 建立網頁 OAuth 用戶端，並填入 Client ID。';
- if(/^https?:\/\//i.test(v)||/script\.google\.com/i.test(v))return '這是網址，不是 OAuth 用戶端 ID。Apps Script 網址不能填在這裡。';
- if(!OAUTH_CLIENT_RE.test(v))return 'Client ID 格式錯誤：應為「數字-識別碼.apps.googleusercontent.com」。';
- return '';
-}
-function showOauthError(msg){$('oauthError').textContent=msg;$('oauthError').classList.toggle('hidden',!msg);$('clientId').setAttribute('aria-invalid',String(!!msg));}
-try{$('clientId').value=localStorage.getItem('shiguang-google-client-id')||''}catch{$('clientId').value=''};
-$('googleOrigin').textContent=location.protocol==='https:'?location.origin:'請透過 GitHub Pages HTTPS 網址開啟';
-$('copyOrigin').onclick=async()=>{if(location.protocol!=='https:')return notify('請先透過 HTTPS 開啟已部署的網站');try{await navigator.clipboard.writeText(location.origin);notify('已複製 JavaScript 來源網址')}catch{notify('無法複製，請手動複製畫面上的網址')}};
-$('clientId').addEventListener('input',()=>showOauthError(''));
-$('saveClient').onclick=()=>{const v=$('clientId').value.trim();const err=oauthClientError(v);if(err){showOauthError(err);return notify(err)}try{localStorage.setItem('shiguang-google-client-id',v);token=null;tokenClient=null;googleEmail=null;showOauthError('');$('cloudState').textContent='已儲存 Client ID，尚未完成 Google 授權';notify('OAuth 用戶端 ID 格式正確，已儲存；請連接 Google 驗證')}catch{notify('瀏覽器 localStorage 空間已滿，OAuth 設定未儲存；請保留原有資料並檢查儲存空間')}};
-function loadGIS(){return new Promise((resolve,reject)=>{if(window.google?.accounts?.oauth2)return resolve();const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.async=true;s.onload=resolve;s.onerror=()=>reject(Error('無法載入 Google 登入程式，請檢查網路'));document.head.append(s)})}
-function googleAuthorizationHelp(code){const c=String(code||'');if(/origin_mismatch|invalid_client/i.test(c))return 'Google 封鎖授權：請確認 Google Cloud 的「已授權 JavaScript 來源」與本頁顯示的網址完全相同。';if(/access_denied|org_internal/i.test(c))return 'Google 拒絕授權：請確認 OAuth Audience 為外部測試，並已將這個 Google 帳號加入測試使用者。';if(/popup_failed_to_open|popup_closed/i.test(c))return '授權視窗未成功開啟或已關閉：請允許此網站彈出視窗後重試。';return 'Google 授權未完成（'+c.slice(0,80)+'）；請檢查 OAuth Client ID、來源網址及測試使用者設定。'}
-async function authorize(next){
- if(!activeProfileId)throw Error('請先選擇使用者');
- if(!window.isSecureContext||location.protocol==='file:')throw Error('Google 連線需部署至 HTTPS（例如 GitHub Pages）');
- const clientId=$('clientId').value.trim();const invalid=oauthClientError(clientId);if(invalid){showOauthError(invalid);throw Error(invalid)}
- await loadGIS();pendingCloudAction=next;const authorizingProfile=activeProfileId;
- if(!tokenClient){tokenClient=google.accounts.oauth2.initTokenClient({client_id:clientId,scope:'openid email https://www.googleapis.com/auth/drive.appdata',callback:async resp=>{
-  if(authorizingProfile!==activeProfileId){pendingCloudAction=null;token=null;return}
-  if(resp.error){const msg=googleAuthorizationHelp(resp.error);showOauthError(msg);notify(msg);pendingCloudAction=null;return}
-  token=resp.access_token;
-  try{await verifyGoogleIdentity();$('cloudState').textContent='✅ 已連線：'+googleEmail+'（'+selectedProfile().name+'）';refreshRecoveryUI();
-   const action=pendingCloudAction;pendingCloudAction=null;if(action)await action();else await refreshCloudBackups();
-  }catch(err){token=null;googleEmail=null;pendingCloudAction=null;notify('Google 連線中止：'+err.message)}
- },error_callback:e=>{const msg=googleAuthorizationHelp(e?.type||'popup_failed_to_open');showOauthError(msg);pendingCloudAction=null;notify(msg)}})}
- tokenClient.requestAccessToken({prompt:'select_account consent'});
-}
-async function verifyGoogleIdentity(){
- const response=await fetch('https://openidconnect.googleapis.com/v1/userinfo',{headers:{Authorization:'Bearer '+token}});
- if(!response.ok)throw Error('無法確認 Google 帳號身分');
- const who=await response.json();const email=String(who.email||'').toLowerCase();
- if(!email||who.email_verified!==true)throw Error('Google 帳號信箱尚未驗證');
- const current=selectedProfile();if(!current)throw Error('未選擇使用者');
- if(current.googleEmail&&current.googleEmail!==email)throw Error('這個保險箱已綁定 '+current.googleEmail+'，不能使用 '+email+' 的雲端資料');
- if(profiles.some(p=>p.id!==current.id&&p.googleEmail===email))throw Error('這個 Google 帳號已綁定其他本機保險箱，請改用家人自己的 Google 帳號');
- if(!current.googleEmail){if(!confirm('即將把「'+current.name+'」的雲端備份綁定至 '+email+'。此保險箱之後只能連接這個 Google 帳號。確定嗎？'))throw Error('已取消綁定');const previousEmail=current.googleEmail;current.googleEmail=email;try{await saveProfiles()}catch(error){current.googleEmail=previousEmail;throw Error('Google 帳號綁定未成功儲存，已回復設定：'+error.message)}}
- googleEmail=email;updateCloudStatus();
-}
-async function assertCloudIdentity(){
- const id=activeProfileId, profile=selectedProfile();
- if(!id||!profile||!token||!googleEmail||profile.googleEmail!==googleEmail)throw Error('請重新連接正確的 Google 帳號');
- const response=await fetch('https://openidconnect.googleapis.com/v1/userinfo',{headers:{Authorization:'Bearer '+token}});
- if(!response.ok)throw Error('無法再次驗證 Google 身分，請重新授權');
- const info=await response.json();
- if(id!==activeProfileId||!info.email_verified||String(info.email||'').toLowerCase()!==googleEmail){token=null;googleEmail=null;throw Error('Google 帳號與目前保險箱不一致，已停止雲端操作')}
- return id;
-}
-async function sha256Text(text){const bytes=new TextEncoder().encode(text);const digest=await crypto.subtle.digest('SHA-256',bytes);return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('')}
-async function withGoogle(fn){if(token&&googleEmail===selectedProfile()?.googleEmail){await assertCloudIdentity();return fn()}token=null;return authorize(fn)}
-$('connectGoogle').onclick=()=>authorize(null).catch(e=>notify(e.message));
-$('autoBackup').onchange=e=>{setCloudPrefs({auto:!!e.target.checked,autoPaused:false});updateCloudStatus();if(e.target.checked){notify('已啟用：資料修改後，Google 連線有效時自動備份；請先連線 Google');if(vault)queueAutoBackup()}else{stopAutoBackup();notify('已停用自動備份')}};
-async function driveFetch(url,opts={}){const response=await fetch(url,{...opts,headers:{Authorization:'Bearer '+token,...opts.headers}});if(response.status===401){token=null;$('cloudState').textContent='連線逾時，請重新授權';throw Error('Google 授權過期，請重新連線')}if(!response.ok)throw Error('Google API '+response.status+': '+(await response.text()).slice(0,150));return response}
-async function listCloud(){
- await assertCloudIdentity();
- const all=[];let pageToken='';
- do{
-  const q="(name = '"+DRIVE_NAME+"' or name = 'shiguang-family-vault.enc.json' or name contains '"+SNAPSHOT_PREFIX+"') and trashed = false";
-  const params={spaces:'appDataFolder',q,fields:'nextPageToken,files(id,name,modifiedTime,size)',pageSize:'100',orderBy:'modifiedTime desc'};
-  if(pageToken)params.pageToken=pageToken;
-  const response=await (await retryCloudRead(()=>driveFetch('https://www.googleapis.com/drive/v3/files?'+new URLSearchParams(params)))).json();
-  all.push(...(response.files||[]));pageToken=response.nextPageToken||'';
- }while(pageToken&&all.length<500);
- return all.filter(f=>f.name===DRIVE_NAME||f.name==='shiguang-family-vault.enc.json'||(f.name.startsWith(SNAPSHOT_PREFIX)&&f.name.endsWith('.enc.json'))).sort((a,b)=>(b.modifiedTime||'').localeCompare(a.modifiedTime||''));
-}
-function backupDate(file){return file.modifiedTime?new Date(file.modifiedTime).toLocaleString('zh-TW',{hour12:false}):'不明時間'}
-function renderCloudList(files){
- const el=$('cloudBackupList');if(!el)return;
- if(!files.length){el.innerHTML='<p class="hint">目前雲端沒有加密備份。</p>';return}
- el.innerHTML='<p class="hint">找到 '+files.length+' 份備份（最多顯示最近 '+BACKUP_LIMIT+' 份）。選擇其中一份還原：</p>'+files.slice(0,BACKUP_LIMIT).map((f,i)=>`<button class="profile-choice backup-choice" data-cloud-index="${i}"><span class="ricon">${iconMarkup('cloud','md','雲端備份')}</span><span class="rinfo"><strong>${esc(backupDate(f))}${i===0?' · 最新':''}</strong><small>${esc(f.name.startsWith(SNAPSHOT_PREFIX)?'獨立版本備份':'舊版備份')} · ${f.size?Math.ceil(Number(f.size)/1024)+' KB':'加密檔'}</small></span><span class="chevron">還原 ${iconMarkup('arrow','sm')}</span></button>`).join('');
- el.querySelectorAll('[data-cloud-index]').forEach(btn=>btn.onclick=()=>runCloudUi('正在讀取所選加密版本…',()=>restoreCloudFile(files[Number(btn.dataset.cloudIndex)])));
-}
-async function createCloudBackup(encrypted){
- const boundary='shiguang_'+uid().replaceAll('-','');
- const now=new Date().toISOString().replace(/[:.]/g,'-');
- const name=SNAPSHOT_PREFIX+now+'-'+uid().slice(0,8)+'.enc.json';
- const meta={name,parents:['appDataFolder'],mimeType:'application/json',description:'Encrypted Shiguang personal vault snapshot'};
- const body='--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+JSON.stringify(meta)+'\r\n--'+boundary+'\r\nContent-Type: application/json\r\n\r\n'+encrypted+'\r\n--'+boundary+'--';
- const response=await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime',{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+boundary},body});return response.json();
-}
-async function readCloudEnvelope(file){
- if(!file?.id)throw Error('雲端備份缺少檔案 ID');
- const response=await retryCloudRead(()=>driveFetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(file.id)+'?alt=media'));
- const raw=await response.text();
- if(raw.length>15000000)throw Error('雲端備份太大，拒絕讀取');
- let item;try{item=JSON.parse(raw)}catch{throw Error('雲端備份不是有效 JSON')}
- if(!validateEnvelope(item))throw Error('雲端備份格式不正確');
- return {item,raw};
-}
-async function verifyUploadedSnapshot(file,expectedEncrypted){
- const loaded=await readCloudEnvelope(file);
- // Stringify the parsed object; ignore whitespace-only differences.
- const expected=JSON.parse(expectedEncrypted);
- if(await sha256Text(JSON.stringify(loaded.item))!==await sha256Text(JSON.stringify(expected)))throw Error('雲端備份上傳後讀回比對失敗，不能標示備份成功');
- return true;
-}
-async function uploadCloud(automatic=false){
- if(!vault)throw Error('請先解鎖才能上傳');
- if(cloudBusy)throw Error('另一項雲端備份正在進行');
- if(!await settleCurrentWrites())throw Error('本機加密儲存未完成，已取消雲端上傳');
- await assertCloudIdentity();
- cloudBusy=true;
- try{
-  const dataId=activeProfileId;const prefs=cloudPrefs();const localEnvelope=getEnvelope();if(!localEnvelope)throw Error('本機尚未建立資料');const encryptedAtStart=JSON.stringify(localEnvelope);
-  const files=await listCloud();if(dataId!==activeProfileId)throw Error('備份期間使用者已切換');const latest=files[0];
-  // Compare remote snapshot against last acknowledged cloud checkpoint, not just the local clock.
-  // A fresh installation with unknown remote state needs a manual decision.
-  const lastSeen=prefs.lastSeenCloudTime||'';
-  const remoteChanged=!!latest&&(!prefs.lastSeenCloudId||prefs.lastSeenCloudId!==latest.id);
-  // Never infer equality from a device clock; the most recent Drive file ID is the checkpoint.
-  if(remoteChanged){
-   updateCloudStatus('⚠️ 雲端有尚未核對的版本：'+backupDate(latest));
-   if(automatic){setCloudPrefs({autoPaused:true});throw Error('偵測到未核對的雲端備份，已暫停自動備份；請先列出歷史版本')} 
-   if(!confirm('⚠️ 雲端有尚未核對的版本（'+backupDate(latest)+'）。可能是其他裝置新增。\n\n建議先匯出本機加密備份，再查看歷史版本。\n這次上傳會新增獨立快照，不會覆蓋舊版。仍要上傳？'))return;
-  }else if(!automatic&&latest&&!confirm('即將新增一份加密備份（不覆蓋舊版），確定繼續？'))return;
-  // Recheck after listing to avoid treating a stale local snapshot as current.
-  if(JSON.stringify(getEnvelope())!==encryptedAtStart)throw Error('備份期間本機資料已修改，請重新上傳');
-  // Check the remote checkpoint again directly before writing. This is a guard,
-  // not a transactional lock: another device can still upload at the same moment.
-  const preflight=await listCloud();
-  if((preflight[0]?.id||'')!==(latest?.id||'')){
-   setCloudPrefs({autoPaused:true});
-   throw Error('上傳前雲端版本發生改變，已取消本次上傳；請先檢查其他裝置的備份');
-  }
-  if(JSON.stringify(getEnvelope())!==encryptedAtStart)throw Error('上傳前本機資料已變動，請重新備份');
-  const uploaded=await createCloudBackup(encryptedAtStart);
-  if(!uploaded?.id)throw Error('Google Drive 未回傳備份 ID，無法確認上傳完成');
-  await verifyUploadedSnapshot(uploaded,encryptedAtStart);
-  if(dataId!==activeProfileId)throw Error('使用者已切換，請重新確認備份');
-  const stamped=uploaded.modifiedTime||new Date().toISOString();
-  const unchanged=JSON.stringify(getEnvelope())===encryptedAtStart;setCloudPrefs({lastBackup:unchanged?new Date().toISOString():prefs.lastBackup,lastSeenCloudTime:stamped,lastSeenCloudId:uploaded.id||'',autoPaused:false,lastError:''});
-  if(!unchanged){updateCloudStatus('⚠️ 雲端已有備份，但備份途中本機又有修改；請再次備份');return}
-  updateCloudStatus('✅ 已成功備份 '+new Date().toLocaleString('zh-TW',{hour12:false})+' · 歷史版本保留');
-  notify(automatic?'已自動上傳加密備份':'已新增加密雲端備份');
-  await refreshCloudBackups();
- }finally{cloudBusy=false}
-}
-async function refreshCloudBackups(){
- const files=await listCloud();renderCloudList(files);const current=files[0];const prefs=cloudPrefs();if(current&&prefs.lastSeenCloudId&&current.id!==prefs.lastSeenCloudId){updateCloudStatus('⚠️ 雲端版本比上次確認更新，可能來自其他裝置；請核對後再上傳')}else updateCloudStatus();
- $('cloudCount').textContent='目前找到 '+files.length+' 份加密備份';
- return files;
-}
-async function restoreCloudFile(file){
- if(!file)throw Error('請先選擇備份');
- await assertCloudIdentity();
- if(vault&&!confirm('即將從 '+backupDate(file)+' 的雲端版本還原。還原可能覆蓋這部裝置較新的修改。\n建議先點「匯出加密備份檔」保存本機版本。要繼續嗎？'))return;
- const {item}=await readCloudEnvelope(file);
- const restored=await restoreObject(item);if(restored){setCloudPrefs({lastSeenCloudTime:file.modifiedTime||'',lastSeenCloudId:file.id||'',autoPaused:true,lastError:''});updateCloudStatus('✅ 已從 '+backupDate(file)+' 還原；之後的修改可以建立新的備份');}
-}
-async function downloadCloud(){const files=await refreshCloudBackups();if(!files.length)throw Error('此 Google 帳號尚無備份');await restoreCloudFile(files[0]);}
-async function runCloudDiagnostic(){
- const button=$('testCloudConnection'), target=$('cloudTestResult');
- if(button)button.disabled=true;
- if(target)target.textContent='正在檢查 Google 身分及加密備份清單…';
- try{
-  await assertCloudIdentity();
-  const files=await listCloud();
-  const latest=files[0];
-  const messages=['Google 帳號驗證：成功（'+googleEmail+'）','加密備份數量：'+files.length];
-  if(latest){
-   const {item,raw}=await readCloudEnvelope(latest);
-   messages.push('最新備份：'+backupDate(latest));
-   messages.push('最新備份格式：有效（已能從雲端讀回）');
-   const local=getEnvelope();
-   if(local){const match=await sha256Text(JSON.stringify(item))===await sha256Text(JSON.stringify(local));messages.push('與本機加密檔是否相同：'+(match?'是':'否（可能是不同備份版本）'))}
-   messages.push('雲端檔案大小：約 '+Math.ceil(new TextEncoder().encode(raw).length/1024)+' KB');
-  }else messages.push('目前尚無雲端備份，未進行讀回驗證');
-  messages.push('本項檢查不會顯示、解密或修改任何密碼。');
-  target.textContent=messages.join('\n');
- }catch(e){if(target)target.textContent='雲端診斷未通過：'+e.message;throw e}
- finally{if(button)button.disabled=false}
-}
-$('testCloudConnection').onclick=()=>runCloudUi('正在檢查 Google 雲端連線…',()=>withGoogle(runCloudDiagnostic));
-$('refreshCloud').onclick=()=>runCloudUi('正在讀取雲端歷史備份…',()=>withGoogle(refreshCloudBackups));
-$('retryBackup').onclick=()=>runCloudUi('正在重新上傳加密備份…',()=>withGoogle(()=>uploadCloud(false))); 
+$('changeMaster').onclick=async()=>{if(saveChains.get(activeProfileId))await saveChains.get(activeProfileId);const p=prompt('輸入新的主密碼（至少 12 字元）');if(p===null)return;if(p.length<12)return notify('至少 12 字元');const p2=prompt('再次輸入新的主密碼');if(p!==p2)return notify('兩次輸入不一致');if(!confirm('更換主密碼後，舊加密備份檔仍使用舊密碼。請產生一份新的加密檔，並自行存入 Google Drive。確定更換？'))return;const newSalt=crypto.getRandomValues(new Uint8Array(16)),newKey=await deriveKey(p,newSalt);const oldKey=masterKey,oldSalt=encryptionSalt;encryptionSalt=newSalt;masterKey=newKey;try{await persist();notify('主密碼已變更；請立即重新備份')}catch(e){masterKey=oldKey;encryptionSalt=oldSalt;notify('主密碼更換失敗：'+e.message)}};
+// V1.7.9: OAuth-free offline backup. Import/export is implemented above.
 $('showRecovery').onclick=()=>{$('recoveryGuide').classList.toggle('hidden');if(!$('recoveryGuide').classList.contains('hidden'))$('recoveryGuide').scrollIntoView({behavior:'smooth',block:'nearest'})};
-$('uploadCloud').onclick=()=>runCloudUi('正在加密上傳並讀回驗證…',()=>withGoogle(()=>uploadCloud(false)));$('downloadCloud').onclick=()=>runCloudUi('正在讀取加密備份並準備還原…',()=>withGoogle(downloadCloud));$('gateCloud').onclick=()=>{clearSensitiveUI();tab('settings');$('app').classList.add('recovery-mode');$('recoveryGuide').classList.remove('hidden');$('gate').classList.add('hidden');$('app').classList.remove('hidden');$('settingsPage').classList.remove('hidden');document.querySelectorAll('.page').forEach(x=>{if(x.id!=='settingsPage')x.classList.add('hidden')});$('cloudState').textContent='請先確認目前選擇的使用者。設定 Google 用戶端 ID 後按「下載雲端備份並還原」；未建立本機保險箱也能還原。';};
 
 async function inspectStorage(){
  const rows=[];let dbOk=false;
@@ -483,65 +298,8 @@ $('checkStorage').onclick=inspectStorage;
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
 
-let cloudUiInProgress=false;
-async function runCloudUi(message,action){
- if(cloudUiInProgress){notify('雲端操作正在進行，請稍後');return}
- cloudUiInProgress=true;setCloudAction(message,'working');
- const buttons=['uploadCloud','downloadCloud','refreshCloud','retryBackup','testCloudConnection'];
- for(const id of buttons)if($(id))$(id).disabled=true;
- try{const result=await action();setCloudAction('雲端操作已結束；請依上方備份狀態確認結果。','ok');return result}
- catch(e){setCloudAction('操作未完成：'+String(e?.message||e).slice(0,150),'failed');notify('雲端操作未完成：'+e.message);return null}
- finally{cloudUiInProgress=false;for(const id of buttons)if($(id))$(id).disabled=false;updateCloudStatus()}
-}
-
 // V1.7.8: mobile editing guard and app update lifecycle.
 let editInitialState='';
-
-// V1.9.4: read-only health check; never expose secret values or modify stored data.
-async function checkVaultIntegrity(){
- const target=$('vaultIntegrityResult'),button=$('checkVaultIntegrity');
- if(!vault||!masterKey||!activeProfileId){target.textContent='請先解鎖私人保險箱';return}
- button.disabled=true;target.textContent='正在核對本機加密資料與帳號關聯…';
- try{
-  if(!await settleCurrentWrites())throw Error('仍有未完成的加密寫入');
-  const envelope=getEnvelope();if(!validateEnvelope(envelope))throw Error('找不到有效的本機加密資料');
-  const id=activeProfileId,iv=unb64(envelope.iv);
-  const decoded=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv},masterKey,unb64(envelope.data))));
-  if(id!==activeProfileId)throw Error('檢查期間已切換使用者');
-  if(!validateVault(decoded))throw Error('本機加密資料結構無效');
-  const issues=[],memberIds=new Set(decoded.members.map(x=>x.id)),catIds=new Set(decoded.categories.map(x=>x.id));
-  const recordIds=new Set();let loginHistory=0,tradeHistory=0,pinHistory=0;
-  decoded.records.forEach((r,i)=>{
-   if(!r||typeof r!=='object'){issues.push('第 '+(i+1)+' 筆帳號格式異常');return}
-   if(!r.id||recordIds.has(r.id))issues.push('帳號識別碼重複或缺失（第 '+(i+1)+' 筆）');recordIds.add(r.id);
-   if(!memberIds.has(r.member))issues.push('第 '+(i+1)+' 筆帳號找不到所屬家人');
-   if(!catIds.has(r.category))issues.push('第 '+(i+1)+' 筆帳號找不到分類');
-   for(const [field,label] of [['history','登入'],['transactionHistory','交易'],['securityPinHistory','PIN']]){
-    if(r[field]!==undefined&&!Array.isArray(r[field]))issues.push('第 '+(i+1)+' 筆'+label+'歷史格式錯誤');
-   }
-   loginHistory+=Array.isArray(r.history)?r.history.length:0;
-   tradeHistory+=Array.isArray(r.transactionHistory)?r.transactionHistory.length:0;
-   pinHistory+=Array.isArray(r.securityPinHistory)?r.securityPinHistory.length:0;
-  });
-  const inMemoryCounts=[vault.members.length,vault.categories.length,vault.records.length];
-  if(inMemoryCounts.join(',')!==[decoded.members.length,decoded.categories.length,decoded.records.length].join(','))issues.push('記憶體與已保存加密資料筆數不一致');
-  const persisted=await storedEnvelope(id);
-  if(!persisted||JSON.stringify(persisted)!==JSON.stringify(envelope))issues.push('已保存資料與本機快取不一致');
-  const lines=['保險箱資料完整性報告（不顯示密碼）',
-    '加密資料：可使用目前解鎖金鑰正常解密',
-    '家庭成員：'+decoded.members.length+' 位',
-    '帳號分類：'+decoded.categories.length+' 種',
-    '帳號紀錄：'+decoded.records.length+' 筆',
-    '密碼歷史：登入 '+loginHistory+'／交易 '+tradeHistory+'／PIN '+pinHistory,
-    issues.length?'發現 '+issues.length+' 項待檢查問題：':'未發現關聯或歷史格式異常',
-    ...issues.slice(0,12),
-    '提醒：此檢查不等於雲端備份或換機還原成功，也不等於安全稽核。'];
-  target.textContent=lines.join('\n');
- }catch(e){target.textContent='檢查未通過：'+(e.message||e)+'\n未修改任何帳號資料。請先匯出加密備份，勿清除網站資料。'}
- finally{button.disabled=false}
-}
-$('checkVaultIntegrity').onclick=checkVaultIntegrity;
-
 function editFingerprint(){const f=$('recordForm');return JSON.stringify([...f.querySelectorAll('input,select,textarea')].map(e=>[e.id,e.type==='checkbox'?e.checked:e.value]));}
 function markEditPristine(){editInitialState=editFingerprint()}
 function editIsDirty(){return $('editDialog')?.open&&editInitialState!==editFingerprint()}
@@ -558,12 +316,13 @@ $('pwaUpdateBtn').onclick=async()=>{
  if(editIsDirty()){notify('請先儲存或放棄帳號修改後再更新');return}
  if([...document.querySelectorAll('dialog[open]')].length){notify('請先關閉編輯視窗再更新');return}
  if(typeof settleCurrentWrites==='function'&&!await settleCurrentWrites()){notify('本機儲存尚未完成，請稍後再更新');return}
- location.reload();
+ const waiting=serviceWorkerReg?.waiting;
+ if(waiting){
+  let reloaded=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!reloaded){reloaded=true;location.reload()}},{once:true});
+  waiting.postMessage({type:'SKIP_WAITING_AFTER_USER_CONFIRMATION'});
+ }else location.reload();
 };
-function setCloudAction(message,kind=''){
- const el=$('cloudActionState');if(!el)return;
- el.textContent=message;el.className='cloud-action-state'+(kind?' '+kind:'');
-}
 // Update checks never access or modify passwords; they only detect a new service worker.
 if('serviceWorker' in navigator && location.protocol==='https:'){
  navigator.serviceWorker.ready.then(reg=>{

@@ -205,7 +205,7 @@ function clearSensitiveUI(){
 }
 function showProfilePicker(){$('master').value='';$('masterConfirm').value='';vault=null;masterKey=null;encryptionSalt=null;activeProfileId=null;stopAutoBackup();clearSensitiveUI();
  $('gate').classList.add('hidden');$('app').classList.add('hidden');$('profilePicker').classList.remove('hidden');$('lockBtn').classList.add('hidden');
- $('profileCreateForm').classList.add('hidden');$('profileCreateError').classList.add('hidden');$('profileList').innerHTML=profiles.length?profiles.map(p=>`<button class="profile-choice" data-profile="${esc(p.id)}"><span class="ricon">${iconMarkup(p.icon||'vault')}</span><span class="rinfo"><strong>${esc(p.name)}</strong><small>獨立主密碼 · 獨立加密資料</small></span><span class="chevron">${iconMarkup('arrow','sm')}</span></button>`).join(''):'<p class="hint">首次使用請建立您的私人保險箱。</p>';
+ $('profileCreateForm').classList.add('hidden');$('profileCreateError').classList.add('hidden');$('profileLoadAlert').classList.add('hidden');$('createProfile').disabled=false;$('profileList').innerHTML=profiles.length?profiles.map(p=>`<button class="profile-choice" data-profile="${esc(p.id)}"><span class="ricon">${iconMarkup(p.icon||'vault')}</span><span class="rinfo"><strong>${esc(p.name)}</strong><small>獨立主密碼 · 獨立加密資料</small></span><span class="chevron">${iconMarkup('arrow','sm')}</span></button>`).join(''):'<p class="hint">首次使用請建立您的私人保險箱。</p>';
  $('profileList').querySelectorAll('[data-profile]').forEach(b=>b.onclick=()=>chooseProfile(b.dataset.profile));refreshRecoveryUI();}
 function chooseProfile(id){stopAutoBackup();if(!profiles.some(p=>p.id===id))return;activeProfileId=id;
  $('profilePicker').classList.add('hidden');$('profileName').textContent=selectedProfile().name;gateMode();refreshRecoveryUI()}
@@ -663,10 +663,22 @@ if('serviceWorker' in navigator && location.protocol==='https:'){
  });
 }
 
-initProfiles().catch(e=>{
+function showProfileLoadFailure(e){
  console.error('保險箱啟動失敗',e);
+ // Error must be visible outside the hidden create-profile form.
  $('profilePicker').classList.remove('hidden');$('gate').classList.add('hidden');$('app').classList.add('hidden');
  $('createProfile').disabled=true;$('profileCreateForm').classList.add('hidden');
- const warning=$('profileCreateError');warning.textContent='讀取本機使用者失敗，已停止操作以保護原始資料。請勿清除網站資料；保留既有加密備份。詳細原因：'+e.message;warning.classList.remove('hidden');
- notify('讀取失敗，已停止操作以保護原始資料');
-});
+ $('profileLoadReason').textContent='詳細原因：'+String(e?.message||e||'未知的本機儲存錯誤');
+ $('profileLoadAlert').classList.remove('hidden');
+ notify('讀取失敗；請查看頁面中的詳細原因，勿清除網站資料');
+}
+$('retryProfileLoad').onclick=async()=>{
+ const button=$('retryProfileLoad');button.disabled=true;button.textContent='重新讀取中…';
+ try{
+  // A transient blocked/failed IndexedDB open must not poison later attempts.
+  indexedDbReady=null;
+  await initProfiles();
+ }catch(e){showProfileLoadFailure(e)}
+ finally{button.disabled=false;button.textContent='重新讀取原有保險箱'}
+};
+initProfiles().catch(showProfileLoadFailure);

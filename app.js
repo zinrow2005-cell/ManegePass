@@ -1,33 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id);
-const DEFAULT_CATS=[
- ['bank','金融銀行','bank','#e2f0ff'],
- ['invest','證券投資','bank','#e4ebff'],
- ['payment','電子支付','shop','#fff0dc'],
- ['shop','購物平台','shop','#ffe9ee'],
- ['social','社群通訊','social','#e8f6e9'],
- ['gov','政府服務','gov','#ede9ff'],
- ['email','電子郵件','email','#fff1d8'],
- ['game','遊戲娛樂','game','#fbe5f4'],
- ['stream','影音串流','game','#f4e7ff'],
- ['cloud','雲端儲存','cloud','#e6f0ff'],
- ['work','工作商務','bank','#e9f1ed'],
- ['school','教育學習','gov','#fff0e5'],
- ['health','醫療健康','home','#f5e8ed'],
- ['travel','交通旅遊','home','#e4f5f0'],
- ['food','餐飲外送','shop','#fff0e9'],
- ['utility','電信水電','home','#e6f4f8'],
- ['device','設備與智慧家庭','settings','#e8eff5'],
- ['home','家庭生活','home','#e5f4f5'],
- ['other','其他帳號','other','#ebf0f5']
-].map(([id,name,icon,color])=>({id,name,icon,color}));
-// Only append missing built-in categories. Never move or overwrite existing password records.
-function ensureBuiltInCategories(data){
- if(!data||!Array.isArray(data.categories))return false;
- const known=new Set(data.categories.map(x=>x.id));let changed=false;
- for(const item of DEFAULT_CATS){if(!known.has(item.id)){data.categories.push({...item});known.add(item.id);changed=true}}
- return changed;
-}
+const DEFAULT_CATS=[['bank','金融銀行','bank','#e2f0ff'],['shop','購物平台','shop','#ffe9ee'],['social','社群通訊','social','#e8f6e9'],['gov','政府服務','gov','#ede9ff'],['email','電子郵件','email','#fff1d8'],['game','遊戲娛樂','game','#fbe5f4'],['home','家庭生活','home','#e5f4f5'],['other','其他帳號','other','#ebf0f5']].map(([id,name,icon,color])=>({id,name,icon,color}));
 const LEGACY_KEY='shiguang-family-vault-v1', PROFILES_KEY='shiguang-vault-profiles-v2';
 let profiles=[],activeProfileId=null, googleEmail=null;
 const keyName=()=>activeProfileId?'shiguang-vault-data-v2-'+activeProfileId:null;
@@ -98,91 +71,40 @@ async function storedEnvelope(id){
  if(content){try{const obj=JSON.parse(content);envelopeCache.set(key,obj);return obj}catch{}}
  return null;
 }
-// Read the primary storage, bypassing the in-memory cache. Never assume a write
-// succeeded merely because the IndexedDB transaction completed.
-async function readPersistedEnvelope(id){
- const name='shiguang-vault-data-v2-'+id;
- let raw;
- // Older installations may still keep the encrypted envelope exclusively in
- // localStorage. Read the authoritative IndexedDB copy first, falling back
- // only when that key is missing (not when IndexedDB reports an error).
- if(globalThis.indexedDB){raw=await idbValue('get',name)}
- if(raw==null){try{raw=localStorage.getItem(name)}catch(error){throw vaultStorageError(error)}}
- if(typeof raw!=='string')throw Error('本機找不到可匯出的加密資料；請勿清除網站資料');
- let value;
- try{value=JSON.parse(raw)}catch{throw Error('本機加密資料 JSON 格式損壞')}
- if(!validateEnvelope(value))throw Error('本機加密資料格式驗證失敗');
- return value;
-}
-// V1.9.4: Atomic compare-and-swap of the encrypted envelope in IndexedDB.
-// The expected envelope is the last ciphertext this tab actually loaded.
-const staleProfiles=new Set();
-function envelopeRaw(obj){return obj==null?null:JSON.stringify(obj)}
-async function atomicEnvelopeWrite(id,envelope,expected){
- const storageKey='shiguang-vault-data-v2-'+id;
- const fresh=JSON.stringify(envelope), before=envelopeRaw(expected);
- if(!globalThis.indexedDB){
-  const actual=localStorage.getItem(storageKey);
-  if(actual!==before)throw Error('其他分頁或視窗已修改此保險箱。請重新鎖定並解鎖，取得最新資料後再操作');
-  localStorage.setItem(storageKey,fresh);
-  if(localStorage.getItem(storageKey)!==fresh)throw Error('本機寫入驗證失敗');
-  envelopeCache.set(storageKey,envelope);return;
- }
- const db=await openVaultDB();
- await new Promise((resolve,reject)=>{
-  const tx=db.transaction(IDB_STORE,'readwrite'), store=tx.objectStore(IDB_STORE);
-  let changed=false, failure=null;
-  const get=store.get(storageKey);
-  get.onsuccess=()=>{
-   const existing=get.result==null?null:get.result;
-   // Legacy vaults may live only in localStorage, but never silently overwrite them.
-   const legacy=existing==null?localStorage.getItem(storageKey):null;
-   const actual=existing==null?legacy:existing;
-   if(actual!==before){changed=true;tx.abort();return}
-   store.put(fresh,storageKey);
-  };
-  get.onerror=()=>{failure=get.error;tx.abort()};
-  tx.oncomplete=resolve;
-  tx.onabort=()=>reject(changed?Error('其他分頁或視窗已修改此保險箱。請重新鎖定並解鎖，取得最新資料後再操作'):failure||tx.error||Error('加密資料寫入交易取消'));
-  tx.onerror=()=>{};
- });
- const stored=await readPersistedEnvelope(id);
- if(envelopeRaw(stored)!==fresh)throw Error('本機加密資料寫入後驗證失敗');
- envelopeCache.set(storageKey,stored);
-}
 async function saveEnvelope(id,envelope){
  const key='shiguang-vault-data-v2-'+id;
- const serialized=JSON.stringify(envelope);
- await safeWrite(key,serialized);
- const verified=await readPersistedEnvelope(id);
- if(JSON.stringify(verified)!==serialized)throw Error('加密資料寫入驗證失敗，請勿關閉網頁，先檢查儲存空間');
- envelopeCache.set(key,verified);
+ await safeWrite(key,JSON.stringify(envelope));
+ envelopeCache.set(key,envelope);
+}
+
+const cloudPrefKey=()=> 'shiguang-cloud-pref-v13-'+activeProfileId;
+function cloudPrefs(){try{return JSON.parse(localStorage.getItem(cloudPrefKey())||'{}')}catch{return {}}}
+function setCloudPrefs(patch){try{localStorage.setItem(cloudPrefKey(),JSON.stringify({...cloudPrefs(),...patch}))}catch(e){console.warn('雲端設定狀態暫無法保存',e?.name)}}
+let autoBackupTimer=null, cloudBusy=false;
+const CLOUD_MAX_RETRIES=2;
+function isRetryableCloudError(e){return /網路|連線中斷|Failed to fetch|NetworkError|Google API (429|500|502|503|504)/i.test(String(e?.message||e))}
+function cloudDelay(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
+async function retryCloudRead(task){let last;for(let attempt=0;attempt<=CLOUD_MAX_RETRIES;attempt++){try{return await task()}catch(e){last=e;if(!isRetryableCloudError(e)||attempt===CLOUD_MAX_RETRIES)break;await cloudDelay(700*(attempt+1))}}throw last}
+function refreshRecoveryUI(){} // File import is available directly from the locked screen.
+function stopAutoBackup(){if(autoBackupTimer)clearTimeout(autoBackupTimer);autoBackupTimer=null}
+function queueAutoBackup(){} // No OAuth, no unattended cloud access.
+function updateCloudStatus(){
+ const node=$('backupStatus');if(!node)return;
+ const state=cloudPrefs();let out=state.lastExport?'上次產生加密檔：'+new Date(state.lastExport).toLocaleString('zh-TW',{hour12:false}):'尚未記錄在此裝置產生備份檔';
+ if(state.lastLocalChange&&(!state.lastExport||state.lastLocalChange>state.lastExport))out+=' · 此後有本機修改，建議重新匯出';
+ out+='。請自行確認檔案已存到自己的 Google Drive；系統無法確認雲端上傳。';node.textContent=out;
 }
 
 function selectedProfile(){return profiles.find(p=>p.id===activeProfileId)}
-async function saveProfiles(){
- const data=JSON.stringify(profiles);
- await safeWrite(PROFILES_KEY,data);
- const written=globalThis.indexedDB?await idbValue('get',PROFILES_KEY):localStorage.getItem(PROFILES_KEY);
- if(written!==data)throw Error('使用者清單寫入驗證失敗');
-}
+async function saveProfiles(){await safeWrite(PROFILES_KEY,JSON.stringify(profiles))}
 async function initProfiles(){
- // Fail closed: a storage failure or corrupt profile list must never look like
- // an empty installation where a new profile can overwrite the old index.
- let raw=null;
- if(globalThis.indexedDB){
-  try{raw=await idbValue('get',PROFILES_KEY)}
-  catch(e){throw Error('無法讀取 IndexedDB 使用者清單，為保護原始資料已停止啟動：'+e.message)}
- }
- if(raw==null){
-  try{raw=localStorage.getItem(PROFILES_KEY)}
-  catch(e){throw Error('無法讀取舊版使用者清單，已停止啟動：'+e.message)}
- }
- if(raw!=null){
-  try{profiles=JSON.parse(raw)}catch{throw Error('使用者清單格式損壞，請勿建立新保險箱或清除網站資料')}
-  if(!Array.isArray(profiles)||profiles.some(p=>!p||typeof p.id!=='string'||typeof p.name!=='string'))
-   throw Error('使用者清單內容不正確，為避免覆蓋已停止啟動');
- }else profiles=[];
+ try{
+  let raw=null;
+  try{raw=await idbValue('get',PROFILES_KEY)}catch{}
+  if(!raw){try{raw=localStorage.getItem(PROFILES_KEY)}catch{}}
+  profiles=JSON.parse(raw||'[]');if(!Array.isArray(profiles))profiles=[];
+ }catch{profiles=[]}
+ profiles=profiles.filter(p=>p&&typeof p.id==='string'&&typeof p.name==='string');
  // Load saved encrypted envelopes before any gate UI uses synchronous getEnvelope().
  for(const p of profiles)await storedEnvelope(p.id);
  try{
@@ -205,7 +127,7 @@ function clearSensitiveUI(){
 }
 function showProfilePicker(){$('master').value='';$('masterConfirm').value='';vault=null;masterKey=null;encryptionSalt=null;activeProfileId=null;stopAutoBackup();clearSensitiveUI();
  $('gate').classList.add('hidden');$('app').classList.add('hidden');$('profilePicker').classList.remove('hidden');$('lockBtn').classList.add('hidden');
- $('profileCreateForm').classList.add('hidden');$('profileCreateError').classList.add('hidden');$('profileLoadAlert').classList.add('hidden');$('createProfile').disabled=false;$('profileList').innerHTML=profiles.length?profiles.map(p=>`<button class="profile-choice" data-profile="${esc(p.id)}"><span class="ricon">${iconMarkup(p.icon||'vault')}</span><span class="rinfo"><strong>${esc(p.name)}</strong><small>獨立主密碼 · 獨立加密資料</small></span><span class="chevron">${iconMarkup('arrow','sm')}</span></button>`).join(''):'<p class="hint">首次使用請建立您的私人保險箱。</p>';
+ $('profileCreateForm').classList.add('hidden');$('profileCreateError').classList.add('hidden');$('profileList').innerHTML=profiles.length?profiles.map(p=>`<button class="profile-choice" data-profile="${esc(p.id)}"><span class="ricon">${iconMarkup(p.icon||'vault')}</span><span class="rinfo"><strong>${esc(p.name)}</strong><small>獨立主密碼 · 獨立加密資料</small></span><span class="chevron">${iconMarkup('arrow','sm')}</span></button>`).join(''):'<p class="hint">首次使用請建立您的私人保險箱。</p>';
  $('profileList').querySelectorAll('[data-profile]').forEach(b=>b.onclick=()=>chooseProfile(b.dataset.profile));refreshRecoveryUI();}
 function chooseProfile(id){stopAutoBackup();if(!profiles.some(p=>p.id===id))return;activeProfileId=id;
  $('profilePicker').classList.add('hidden');$('profileName').textContent=selectedProfile().name;gateMode();refreshRecoveryUI()}
@@ -221,16 +143,12 @@ $('profileCreateForm').onsubmit=async e=>{e.preventDefault();const name=$('newPr
  checkLocalSecurity();
  if(!crypto.randomUUID)throw Error('瀏覽器版本不支援建立安全識別碼，請更新瀏覽器並以 HTTPS 開啟。');
  p={id:uid(),name:name.slice(0,40),icon:'vault'};
- const next=[...profiles,p];const previous=profiles;profiles=next;
- try{await saveProfiles()}catch(error){profiles=previous;throw error}
+ const next=[...profiles,p];await safeWrite(PROFILES_KEY,JSON.stringify(next));profiles=next;
  $('newProfileName').value='';$('profileCreateForm').classList.add('hidden');chooseProfile(p.id);
  }catch(err){creationError(err.message||'建立使用者失敗，請檢查瀏覽器儲存權限')}};
 $('switchFromGate').onclick=async()=>{if(await settleCurrentWrites())showProfilePicker()};
-$('switchProfile').onclick=async()=>{if(editIsDirty()&&!safeEditDismiss())return;if(!confirm('切換使用者前將鎖定目前保險箱，確定切換？'))return;if(!await settleCurrentWrites())return;for(const d of document.querySelectorAll('dialog[open]'))d.close();showProfilePicker()};
+$('switchProfile').onclick=async()=>{if(!confirm('切換使用者前將鎖定目前保險箱，確定切換？'))return;if(!await settleCurrentWrites())return;for(const d of document.querySelectorAll('dialog[open]'))d.close();showProfilePicker()};
 let vault=null, masterKey=null, encryptionSalt=null, selectedCat='all', selectedRecord=null, token=null, tokenClient=null, pendingCloudAction=null, lastActive=Date.now();let smallMode='member';
-let batchMode=false, batchSaving=false;const batchSelected=new Set();
-function resetBatch(){if(typeof closeSmart==='function'&&$('smartPanel'))closeSmart();batchMode=false;batchSelected.clear();updateBatchControls();}
-function updateBatchControls(){const panel=$('batchPanel');if(!panel)return;panel.classList.toggle('hidden',!batchMode);$('batchToggle').textContent=batchMode?'完成整理':'批次整理';$('batchToggle').setAttribute('aria-pressed',String(batchMode));const visible=batchMode&&vault?matchingRecords(selectedCat):[];const visibleIds=new Set(visible.map(r=>r.id));for(const id of batchSelected)if(!visibleIds.has(id))batchSelected.delete(id);$('batchCount').textContent=`已選 ${batchSelected.size} 筆／目前 ${visible.length} 筆`;$('batchApply').disabled=batchSaving||!batchSelected.size||!$('batchCategory').value;$('batchSelectAll').disabled=batchSaving||!visible.length;$('batchClear').disabled=batchSaving||!batchSelected.size;$('batchCategory').disabled=batchSaving;}
 const uid=()=>crypto.randomUUID();const today=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
 const fmt=d=>d?new Date(d+'T12:00:00').toLocaleDateString('zh-TW'):'未設定';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -254,187 +172,31 @@ async function persist(){
  const task=previous.catch(()=>{}).then(async()=>{
   const envelope=await enc(snapshot,key,salt);
   if(id!==activeProfileId||vault!==source||masterKey!==key)throw Error('儲存期間保險箱已切換，請確認資料');
-  if(staleProfiles.has(id))throw Error('此保險箱已偵測到版本衝突，請鎖定後重新解鎖再修改');
-  const preceding=getEnvelope();
-  try{await atomicEnvelopeWrite(id,envelope,preceding)}catch(error){
-   // Never roll back when another tab wrote a newer envelope.
-   if(String(error.message).includes('其他分頁'))staleProfiles.add(id);
-   else if(preceding){
-    try{
-     const actual=await readPersistedEnvelope(id);
-     // Roll back only if this tab's new ciphertext is actually on disk.
-     if(envelopeRaw(actual)===envelopeRaw(envelope))await atomicEnvelopeWrite(id,preceding,envelope);
-    }catch(rollbackError){
-     if(String(rollbackError.message).includes('其他分頁'))staleProfiles.add(id);
-     throw Error('寫入驗證失敗，無法確認原始密文已安全復原。請保留網站資料並檢查備份：'+rollbackError.message);
-    }
-   }
-   throw error;
-  }
+  await saveEnvelope(id,envelope);
   source.updatedAt=timestamp;setCloudPrefs({lastLocalChange:timestamp});queueAutoBackup();updateCloudStatus();
  });
  saveChains.set(id,task);
  try{await task}finally{if(saveChains.get(id)===task)saveChains.delete(id)}
 }
 function gateMode(){if(!activeProfileId)return showProfilePicker();$('gateError').classList.add('hidden');const exists=!!getEnvelope();$('gateTitle').textContent=exists?'解鎖私人保險箱':'建立私人保險箱';$('gateDesc').textContent=exists?'輸入此使用者的主密碼。':'請為這位使用者設定獨立的主密碼（至少 12 字元）。';$('confirmWrap').classList.toggle('hidden',exists);$('gateBtn').textContent=exists?'解鎖保險箱':'建立加密資料庫';$('app').classList.add('hidden');$('gate').classList.remove('hidden');$('lockBtn').classList.add('hidden');}
-// A failed write or failed recovery can leave the tab's in-memory key or
-// encrypted cache inconsistent with IndexedDB. Never continue editing.
-async function lockAfterUncertainWrite(){
- const id=activeProfileId;
- stopAutoBackup();resetBatch();clearSensitiveUI();
- vault=null;masterKey=null;encryptionSalt=null;selectedRecord=null;
- if(id)envelopeCache.delete('shiguang-vault-data-v2-'+id);
- if(id){try{const latest=await readPersistedEnvelope(id);envelopeCache.set('shiguang-vault-data-v2-'+id,latest)}catch{}}
- gateMode();
-}
-async function lock(){if(!await settleCurrentWrites())return;stopAutoBackup();resetBatch();clearSensitiveUI();vault=null;masterKey=null;encryptionSalt=null;selectedRecord=null;$('master').value='';$('masterConfirm').value='';for(const d of document.querySelectorAll('dialog[open]'))d.close();gateMode();notify('已安全鎖定');}
-async function unlock(password){const obj=await readPersistedEnvelope(activeProfileId);envelopeCache.set(keyName(),obj);staleProfiles.delete(activeProfileId);const result=await dec(obj,password);vault=result.data;const categoryMigrated=ensureBuiltInCategories(vault);masterKey=result.key;encryptionSalt=result.salt;if(categoryMigrated){try{await persist()}catch(e){vault=null;masterKey=null;encryptionSalt=null;throw Error('舊資料分類升級未能安全儲存，請確認儲存空間後重試：'+e.message)}}$('gate').classList.add('hidden');$('app').classList.remove('hidden');$('app').classList.remove('recovery-mode');$('lockBtn').classList.remove('hidden');lastActive=Date.now();selectedCat='all';$('search').value='';$('memberFilter').value='all';resetBatch();render();$('master').value='';$('masterConfirm').value='';refreshRecoveryUI();notify('已解鎖');}
-$('gateBtn').onclick=async()=>{const p=$('master').value;$('gateError').classList.add('hidden');if(!p)return creationError('請輸入主密碼','gateError');$('gateBtn').disabled=true;try{checkLocalSecurity();$('gateBtn').textContent='正在加密處理…';if(getEnvelope()){await unlock(p)}else{if(p.length<12)throw Error('主密碼至少需要 12 字元');if(p!==$('masterConfirm').value)throw Error('兩次輸入的主密碼不一致');encryptionSalt=crypto.getRandomValues(new Uint8Array(16));masterKey=await deriveKey(p,encryptionSalt);vault=emptyVault();await persist();$('gate').classList.add('hidden');$('app').classList.remove('hidden');$('lockBtn').classList.remove('hidden');render();$('master').value='';$('masterConfirm').value='';notify('加密保險箱建立成功')}}catch(e){if(vault&&$('app').classList.contains('hidden')){vault=null;masterKey=null;encryptionSalt=null;}creationError(String(e.message||'建立失敗').includes('decrypt')?'主密碼不正確':(e.message||'建立失敗'),'gateError')}finally{$('gateBtn').disabled=false;$('gateBtn').textContent=getEnvelope()?'解鎖保險箱':'建立加密資料庫'}};
+async function lock(){if(!await settleCurrentWrites())return;stopAutoBackup();clearSensitiveUI();vault=null;masterKey=null;encryptionSalt=null;selectedRecord=null;$('master').value='';$('masterConfirm').value='';for(const d of document.querySelectorAll('dialog[open]'))d.close();gateMode();notify('已安全鎖定');}
+async function unlock(password){const obj=getEnvelope();const result=await dec(obj,password);vault=result.data;masterKey=result.key;encryptionSalt=result.salt;$('gate').classList.add('hidden');$('app').classList.remove('hidden');$('app').classList.remove('recovery-mode');$('lockBtn').classList.remove('hidden');lastActive=Date.now();selectedCat='all';render();$('master').value='';$('masterConfirm').value='';refreshRecoveryUI();notify('已解鎖');}
+$('gateBtn').onclick=async()=>{const p=$('master').value;$('gateError').classList.add('hidden');if(!p)return creationError('請輸入主密碼','gateError');$('gateBtn').disabled=true;try{checkLocalSecurity();$('gateBtn').textContent='正在加密處理…';if(getEnvelope()){await unlock(p)}else{if(p.length<12)throw Error('主密碼至少需要 12 字元');if(p!==$('masterConfirm').value)throw Error('兩次輸入的主密碼不一致');encryptionSalt=crypto.getRandomValues(new Uint8Array(16));masterKey=await deriveKey(p,encryptionSalt);vault=emptyVault();await persist();$('gate').classList.add('hidden');$('app').classList.remove('hidden');$('lockBtn').classList.remove('hidden');render();$('master').value='';$('masterConfirm').value='';notify('加密保險箱建立成功')}}catch(e){creationError(String(e.message||'建立失敗').includes('decrypt')?'主密碼不正確':(e.message||'建立失敗'),'gateError')}finally{$('gateBtn').disabled=false;$('gateBtn').textContent=getEnvelope()?'解鎖保險箱':'建立加密資料庫'}};
 $('lockBtn').onclick=lock;
 ['click','keydown','touchstart'].forEach(ev=>document.addEventListener(ev,()=>{if(vault)lastActive=Date.now()},{passive:true}));setInterval(()=>{if(vault&&Date.now()-lastActive>300000)lock()},15000);
 function mname(id){return vault.members.find(x=>x.id===id)?.name||'未分類'}function cname(id){return vault.categories.find(x=>x.id===id)?.name||'其他'}function cat(id){return vault.categories.find(x=>x.id===id)||DEFAULT_CATS[7]}
-function tab(t){if(t!=='records')resetBatch();if(!vault&&t!=='settings')return;for(const name of ['records','members','due','settings'])$(name+'Page').classList.toggle('hidden',name!==t);document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));if(t==='due')renderDue();if(t==='members')renderMembers();window.scrollTo({top:0,behavior:'smooth'});}
+function tab(t){if(!vault&&t!=='settings')return;for(const name of ['records','members','due','settings'])$(name+'Page').classList.toggle('hidden',name!==t);document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));if(t==='due')renderDue();if(t==='members')renderMembers();window.scrollTo({top:0,behavior:'smooth'});}
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tab(b.dataset.tab));document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>tab(b.dataset.go));
-function render(){if(!vault)return;updateBatchControls();updateCloudStatus();$('activeProfileBadge').textContent=(selectedProfile()?.name||'');$('countAll').textContent=vault.records.length;$('countMember').textContent=vault.members.length;$('countDue').textContent=vault.records.filter(r=>r.due&&r.due<=today()).length;renderSelects();renderCats();renderRecords();renderMembers();renderDue();if(smartOpen)refreshSmart();}
-// 分類計數與清單共用同一個成員/搜尋條件，避免卡片數字與實際清單不一致。
-function matchingRecords(category='all'){
- const q=$('search').value.trim().toLowerCase();
- const member=$('memberFilter').value||'all';
- return vault.records.filter(r=>(category==='all'||r.category===category)
-  &&(member==='all'||r.member===member)
-  &&[r.title,r.username,r.note,r.url].some(s=>String(s||'').toLowerCase().includes(q)));
-}
-// V1.8.6: presentation-only grouping. Category IDs and encrypted records remain unchanged.
-const CAT_GROUPS=[
- {id:'finance',label:'金融與支付',icon:'bank',ids:['bank','invest','payment']},
- {id:'online',label:'網路與社群',icon:'cloud',ids:['email','social','cloud','shop']},
- {id:'life',label:'生活與民生',icon:'home',ids:['gov','health','travel','food','utility','home','device']},
- {id:'work',label:'工作與學習',icon:'gov',ids:['work','school']},
- {id:'fun',label:'娛樂與遊戲',icon:'game',ids:['game','stream']},
- {id:'misc',label:'其他與自訂',icon:'other',ids:['other']}
-];
-let openCatGroups=new Set(['finance']);
-function groupForCat(id){return CAT_GROUPS.find(g=>g.ids.includes(id))?.id||'misc'}
-function categoryTile(c){return `<button type="button" class="category ${selectedCat===c.id?'selected':''}" data-cat="${esc(c.id)}" aria-pressed="${selectedCat===c.id}"><span class="art" style="background:${/^#[0-9a-fA-F]{6}$/.test(c.color)?c.color:'#eaf0f6'}">${iconMarkup(c.icon,'lg',c.name)}</span><small>${esc(c.name)}</small><span class="num">${matchingRecords(c.id).length} 筆</span></button>`}
-function renderCats(){
- const root=$('categories');
- const q=$('search').value.trim();
- const builtin=new Set(CAT_GROUPS.flatMap(g=>g.ids));
- const groups=CAT_GROUPS.map(g=>({...g,cats:vault.categories.filter(c=>g.id==='misc'?(g.ids.includes(c.id)||!builtin.has(c.id)):g.ids.includes(c.id))}));
- root.innerHTML=`<div class="cat-all">${categoryTile({id:'all',name:'全部分類',icon:'all',color:'#eaf0f6'})}</div><div class="cat-groups">${groups.filter(g=>g.cats.length).map(g=>{
-  const count=g.cats.reduce((sum,c)=>sum+matchingRecords(c.id).length,0);
-  const active=g.cats.some(c=>c.id===selectedCat);
-  const expanded=openCatGroups.has(g.id)||active||Boolean(q);
-  return `<details class="cat-group" data-group="${g.id}" ${expanded?'open':''}><summary><span class="cat-group-icon">${iconMarkup(g.icon,'md',g.label)}</span><span class="cat-group-label">${esc(g.label)}<small>${g.cats.length} 個分類</small></span><span class="cat-group-count">${count} 筆</span><span class="cat-group-arrow" aria-hidden="true">⌄</span></summary><div class="cat-group-grid">${g.cats.map(categoryTile).join('')}</div></details>`;
- }).join('')}</div>`;
- root.querySelectorAll('details.cat-group').forEach(d=>d.addEventListener('toggle',()=>{if(d.open)openCatGroups.add(d.dataset.group);else openCatGroups.delete(d.dataset.group)}));
- root.querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>{selectedCat=b.dataset.cat;batchSelected.clear();if(selectedCat!=='all')openCatGroups.add(groupForCat(selectedCat));renderCats();renderRecords();if(smartOpen)refreshSmart()});
-}
-
-function renderSelects(){const mf=$('memberFilter');const old=mf.value;mf.innerHTML='<option value="all">所有家人</option>'+vault.members.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');mf.value=[...mf.options].some(o=>o.value===old)?old:'all';$('rMember').innerHTML=vault.members.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');$('rCategory').innerHTML=vault.categories.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');const previous=$('batchCategory').value;$('batchCategory').innerHTML='<option value="">請選擇目標分類</option>'+vault.categories.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');if(vault.categories.some(c=>c.id===previous))$('batchCategory').value=previous;}
+function render(){if(!vault)return;updateCloudStatus();$('activeProfileBadge').textContent=(selectedProfile()?.name||'');$('countAll').textContent=vault.records.length;$('countMember').textContent=vault.members.length;$('countDue').textContent=vault.records.filter(r=>r.due&&r.due<=today()).length;renderCats();renderRecords();renderMembers();renderDue();renderSelects();}
+function renderCats(){const rows=[{id:'all',name:'全部分類',icon:'all',color:'#eaf0f6'},...vault.categories];$('categories').innerHTML=rows.map(c=>`<button class="category ${selectedCat===c.id?'selected':''}" data-cat="${esc(c.id)}"><span class="art" style="background:${/^#[0-9a-fA-F]{6}$/.test(c.color)?c.color:'#eaf0f6'}">${iconMarkup(c.icon,'lg',c.name)}</span><small>${esc(c.name)}</small><span class="num">${c.id==='all'?vault.records.length:vault.records.filter(r=>r.category===c.id).length} 筆</span></button>`).join('');$('categories').querySelectorAll('button').forEach(b=>b.onclick=()=>{selectedCat=b.dataset.cat;renderCats();renderRecords()});}
+function renderSelects(){const mf=$('memberFilter');const old=mf.value;mf.innerHTML='<option value="all">所有家人</option>'+vault.members.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');mf.value=[...mf.options].some(o=>o.value===old)?old:'all';$('rMember').innerHTML=vault.members.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');$('rCategory').innerHTML=vault.categories.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');}
 function card(r){const c=cat(r.category);return `<button class="record" data-rec="${esc(r.id)}"><span class="ricon" style="background:${/^#[0-9a-fA-F]{6}$/.test(c.color)?c.color:'#eef4f8'}">${iconMarkup(c.icon,'md',c.name)}</span><span class="rinfo"><strong>${esc(r.title)}</strong><small>${esc(mname(r.member))} · ${esc(r.username||'未填帳號')}${r.due&&r.due<=today()?' · 待檢查':''}</small></span><span class="chevron">${iconMarkup('arrow','sm')}</span></button>`;}
 function bindCards(el){el.querySelectorAll('[data-rec]').forEach(b=>b.onclick=()=>showDetail(b.dataset.rec));}
-function renderRecords(){if(!vault)return;const items=matchingRecords(selectedCat).sort((a,b)=>a.title.localeCompare(b.title,'zh-Hant'));$('listTitle').textContent=`${selectedCat==='all'?'全部帳號':cname(selectedCat)}（${items.length}）`;$('records').innerHTML=items.length?items.map(r=>batchMode?`<div class="batch-record"><label class="batch-check"><input type="checkbox" data-batch-id="${esc(r.id)}" ${batchSelected.has(r.id)?'checked':''} aria-label="選取 ${esc(r.title)}"><span class="sr-only">選取 ${esc(r.title)}</span></label>${card(r)}</div>`:card(r)).join(''):'<div class="empty">🌱 還沒有符合條件的帳號，點選「新增帳號」開始整理。</div>';if(batchMode){$('records').querySelectorAll('[data-batch-id]').forEach(box=>box.onchange=()=>{if(box.checked)batchSelected.add(box.dataset.batchId);else batchSelected.delete(box.dataset.batchId);updateBatchControls()});$('records').querySelectorAll('[data-rec]').forEach(b=>b.onclick=()=>{const id=b.dataset.rec;if(batchSelected.has(id))batchSelected.delete(id);else batchSelected.add(id);renderRecords()});}else bindCards($('records'));updateBatchControls();}
-
-// V1.8.4: local, deterministic classification. Never analyze secrets or send records to a server.
-// Domains are exact or subdomain matches, preventing lookalike domains from being classified.
-const SMART_RULES=[
- {cat:'bank',hosts:['bot.com.tw','fubon.com','cathaybk.com.tw','esunbank.com','ctbcbank.com','taishinbank.com.tw','megabank.com.tw','firstbank.com.tw','landbank.com.tw'],words:['臺灣銀行','台灣銀行','國泰世華','玉山銀行','台新銀行','中國信託','兆豐銀行','第一銀行','土地銀行','富邦銀行']},
- {cat:'invest',hosts:['twse.com.tw','tpex.org.tw','sinotrade.com.tw','yuanta.com.tw','capital.com.tw','fubon.com.tw'],words:['元大證券','永豐金證券','富邦證券','凱基證券','國泰證券','群益證券','期貨交易']},
- {cat:'payment',hosts:['linepay.com.tw','jkopay.com','pxpay.com.tw','easywallet.com.tw'],words:['LINE Pay','街口支付','全支付','悠遊付','台灣pay']},
- {cat:'shop',hosts:['shopee.tw','momo.com.tw','pchome.com.tw','ruten.com.tw','amazon.com','rakuten.com.tw','costco.com.tw'],words:['蝦皮','momo購物','PChome','露天拍賣','樂天市場','好市多']},
- {cat:'social',hosts:['facebook.com','instagram.com','threads.net','discord.com','line.me','linkedin.com'],words:['Facebook','Instagram','Threads','Discord','LINE通訊','LinkedIn','臉書']},
- {cat:'gov',hosts:['gov.tw','govtaiwan.org'],words:['健保署','勞保局','監理服務網','自然人憑證','戶政事務所','財政部電子申報']},
- {cat:'email',hosts:['gmail.com','outlook.live.com','mail.google.com','mail.yahoo.com','proton.me'],words:['Gmail','Outlook','電子郵件','信箱帳號','Yahoo信箱','Proton Mail']},
- {cat:'game',hosts:['steampowered.com','store.steampowered.com','epicgames.com','roblox.com','nintendo.com','playstation.com'],words:['Steam','Epic Games','Roblox','任天堂帳號','PlayStation']},
- {cat:'stream',hosts:['netflix.com','disneyplus.com','spotify.com','youtube.com','twitch.tv','myvideo.net.tw','friday.tw'],words:['Netflix','Disney+','Spotify','YouTube','Twitch','MyVideo','friDay影音']},
- {cat:'cloud',hosts:['drive.google.com','dropbox.com','onedrive.live.com','icloud.com','box.com'],words:['Google Drive','Dropbox','OneDrive','iCloud雲端']},
- {cat:'work',hosts:['github.com','gitlab.com','slack.com','notion.so','figma.com','trello.com','atlassian.net'],words:['GitHub','GitLab','Slack','Notion','Figma','Trello']},
- {cat:'school',hosts:['coursera.org','udemy.com','duolingo.com','khanacademy.org'],words:['Coursera','Udemy','Duolingo','Khan Academy','學習平台']},
- {cat:'health',hosts:['nhi.gov.tw','health.gov.tw'],words:['醫院掛號','健康存摺','電子病歷']},
- {cat:'travel',hosts:['booking.com','agoda.com','airbnb.com','kkday.com','klook.com','thsrc.com.tw','railway.gov.tw'],words:['Booking.com','Agoda','Airbnb','KKday','Klook','台灣高鐵','台鐵訂票']},
- {cat:'food',hosts:['foodpanda.com.tw','ubereats.com','foodpanda.com'],words:['foodpanda','Uber Eats','外送平台']},
- {cat:'utility',hosts:['cht.com.tw','taiwanmobile.com','fetnet.net','taipower.com.tw','water.gov.tw'],words:['中華電信','台灣大哥大','遠傳電信','台灣電力','台灣自來水','台電帳號']},
- {cat:'device',hosts:['tplink.com','asusrouter.com','myqnapcloud.com','synology.com'],words:['TP-Link','ASUS Router','Synology','QNAP','監視器帳號','路由器管理']},
-];
-function smartHost(raw){try{if(!raw||!/^https?:\/\//i.test(raw.trim()))return '';return new URL(raw.trim()).hostname.toLowerCase().replace(/\.$/,'')}catch{return ''}}
-function smartGuess(r){
- const host=smartHost(r.url||'');const title=String(r.title||'').normalize('NFKC').toLocaleLowerCase();
- const hits=[];
- for(const rule of SMART_RULES){
-  // Prefer specific hosts; generic hosts shared across services cannot override a specific hostname.
-  const matching=rule.hosts.filter(x=>host&&(host===x||host.endsWith('.'+x))).sort((a,b)=>b.length-a.length);
-  if(matching.length)hits.push({cat:rule.cat,score:100+matching[0].length,reason:'網站網址'});
-  else if(!host&&rule.words.some(w=>title.includes(w.normalize('NFKC').toLocaleLowerCase())))hits.push({cat:rule.cat,score:30,reason:'帳號名稱'});
- }
- if(!hits.length)return null;
- hits.sort((a,b)=>b.score-a.score);
- if(hits.length>1&&hits[0].score===hits[1].score)return null; // ambiguous: do not propose
- const chosen=hits[0];if(r.category===chosen.cat||!vault.categories.some(c=>c.id===chosen.cat))return null;
- return {id:r.id,to:chosen.cat,reason:chosen.reason};
-}
-// V1.8.6: form classification suggestions are local-only and never change a selected category automatically.
-let editSuggestionDismissed=false;
-function filterEditCategories(){
- const input=$('rCategorySearch');const select=$('rCategory');if(!vault||!select)return;
- const query=(input.value||'').trim().normalize('NFKC').toLocaleLowerCase();
- const current=select.value;
- const matches=vault.categories.filter(c=>c.name.normalize('NFKC').toLocaleLowerCase().includes(query));
- const visible=matches.length?matches:[];
- const options=visible.some(c=>c.id===current)?visible:[...visible,...vault.categories.filter(c=>c.id===current)];
- select.innerHTML=options.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}${query&&!matches.some(m=>m.id===c.id)?'（目前選擇）':''}</option>`).join('');
- if(options.some(c=>c.id===current))select.value=current;
- $('rCategorySearchHint').textContent=query?(matches.length?`找到 ${matches.length} 種分類，請從下拉選單選擇`:'沒有符合的分類；保留目前選擇，可清除搜尋重新挑選'):'可輸入關鍵字，快速縮小分類選單';
-}
-function refreshEditAdvice(){
- const root=$('editCategoryAdvice');if(!vault||!root||!$('editDialog').open||editSuggestionDismissed){root?.classList.add('hidden');return;}
- const current=$('rCategory').value;
- const guess=smartGuess({id:'form-preview',title:$('rTitle').value,url:$('rUrl').value,category:current});
- if(!guess){root.classList.add('hidden');return;}
- root.classList.remove('hidden');root.dataset.target=guess.to;
- $('editAdviceText').textContent=`依${guess.reason}，建議分類為「${cname(guess.to)}」；目前是「${cname(current)}」。`;
-}
-$('rCategorySearch').addEventListener('input',filterEditCategories);
-$('rCategory').addEventListener('change',()=>{editSuggestionDismissed=true;$('editCategoryAdvice').classList.add('hidden')});
-for(const id of ['rTitle','rUrl'])$(id).addEventListener('input',()=>{editSuggestionDismissed=false;refreshEditAdvice()});
-$('editApplyAdvice').onclick=()=>{const target=$('editCategoryAdvice').dataset.target;if(!vault.categories.some(c=>c.id===target))return;$('rCategorySearch').value='';$('rCategory').innerHTML=vault.categories.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');$('rCategory').value=target;filterEditCategories();editSuggestionDismissed=true;$('editCategoryAdvice').classList.add('hidden');};
-$('editDismissAdvice').onclick=()=>{editSuggestionDismissed=true;$('editCategoryAdvice').classList.add('hidden')};
-let smartOpen=false,smartSaving=false;const smartSelected=new Set();let smartSuggestions=[];
-function closeSmart(){smartOpen=false;smartSelected.clear();$('smartPanel').classList.add('hidden');$('smartToggle').setAttribute('aria-pressed','false')}
-function refreshSmart(){
- if(!vault||!smartOpen)return;
- // Suggestions are limited to current member and search filters, across categories.
- smartSuggestions=matchingRecords('all').map(r=>({record:r,guess:smartGuess(r)})).filter(x=>x.guess);
- const ids=new Set(smartSuggestions.map(x=>x.record.id));for(const id of smartSelected)if(!ids.has(id))smartSelected.delete(id);
- $('smartSuggestions').innerHTML=smartSuggestions.length?smartSuggestions.map(({record:r,guess:g})=>`<label class="smart-item"><input type="checkbox" data-smart-id="${esc(r.id)}" ${smartSelected.has(r.id)?'checked':''} ${smartSaving?'disabled':''}><span><strong>${esc(r.title)}</strong><small>${esc(cname(r.category))} → ${esc(cname(g.to))} · 依${esc(g.reason)}建議</small></span></label>`).join(''):'<p class="hint">目前篩選範圍沒有明確且需要調整的分類建議。沒有建議的帳號保持原分類，可自行編輯。</p>';
- $('smartSuggestions').querySelectorAll('[data-smart-id]').forEach(x=>x.onchange=()=>{x.checked?smartSelected.add(x.dataset.smartId):smartSelected.delete(x.dataset.smartId);refreshSmartCount()});refreshSmartCount();
-}
-function refreshSmartCount(){$('smartCount').textContent=`已勾選 ${smartSelected.size}／${smartSuggestions.length} 筆`;$('smartApply').disabled=smartSaving||!smartSelected.size;$('smartSelectAll').disabled=smartSaving||!smartSuggestions.length;$('smartClear').disabled=smartSaving||!smartSelected.size}
-$('smartToggle').onclick=()=>{if(smartSaving)return;smartOpen=!smartOpen;smartSelected.clear();$('smartPanel').classList.toggle('hidden',!smartOpen);$('smartToggle').setAttribute('aria-pressed',String(smartOpen));if(smartOpen){if(batchMode){batchMode=false;batchSelected.clear();renderRecords()}refreshSmart()}};
-$('smartClose').onclick=closeSmart;
-$('smartSelectAll').onclick=()=>{if(smartSaving)return;smartSuggestions.forEach(x=>smartSelected.add(x.record.id));refreshSmart()};
-$('smartClear').onclick=()=>{if(smartSaving)return;smartSelected.clear();refreshSmart()};
-$('smartApply').onclick=async()=>{
- if(smartSaving||!vault||!smartSelected.size)return;
- const changes=smartSuggestions.filter(x=>smartSelected.has(x.record.id)&&x.guess.to!==x.record.category);
- if(!changes.length)return notify('目前沒有可套用的建議');
- if(!confirm(`確定套用 ${changes.length} 筆智慧分類建議？\n只變更分類，其餘帳號資料不變。`))return;
- smartSaving=true;refreshSmartCount();const previous=changes.map(x=>({record:x.record,category:x.record.category,updatedAt:x.record.updatedAt}));const stamp=new Date().toISOString();
- for(const x of changes){x.record.category=x.guess.to;x.record.updatedAt=stamp}
- try{await persist();smartSelected.clear();render();refreshSmart();notify(`已成功重新分類 ${changes.length} 筆帳號`)}
- catch(e){for(const x of previous){x.record.category=x.category;x.record.updatedAt=x.updatedAt}render();refreshSmart();notify('智慧分類未成功儲存，已還原變更：'+e.message)}
- finally{smartSaving=false;refreshSmartCount()}
-};
-
-$('batchToggle').onclick=()=>{if(batchSaving)return;batchMode=!batchMode;batchSelected.clear();if(batchMode)closeSmart();renderRecords()};
-$('batchSelectAll').onclick=()=>{if(batchSaving)return;matchingRecords(selectedCat).forEach(r=>batchSelected.add(r.id));renderRecords()};
-$('batchClear').onclick=()=>{if(batchSaving)return;batchSelected.clear();renderRecords()};
-$('batchCategory').onchange=updateBatchControls;
-$('batchApply').onclick=async()=>{if(batchSaving||!vault||!batchSelected.size)return;const target=$('batchCategory').value;const category=vault.categories.find(c=>c.id===target);if(!category)return notify('請選擇有效的目標分類');const ids=new Set(batchSelected),changed=vault.records.filter(r=>ids.has(r.id)&&r.category!==target);if(!changed.length)return notify('選取的帳號已在這個分類，無須移動');if(!confirm(`確定將 ${changed.length} 筆帳號移至「${category.name}」？\n僅變更分類，其他內容保持不變。`))return;batchSaving=true;updateBatchControls();const previous=changed.map(r=>({record:r,category:r.category,updatedAt:r.updatedAt}));const stamp=new Date().toISOString();for(const r of changed){r.category=target;r.updatedAt=stamp;}try{await persist();batchSelected.clear();render();notify(`已將 ${changed.length} 筆帳號移至「${category.name}」`)}catch(e){for(const x of previous){x.record.category=x.category;x.record.updatedAt=x.updatedAt;}render();notify('批次分類儲存失敗，已復原畫面資料：'+e.message)}finally{batchSaving=false;updateBatchControls()}};
+function renderRecords(){if(!vault)return;const q=$('search').value.trim().toLowerCase(),member=$('memberFilter').value||'all';$('listTitle').textContent=selectedCat==='all'?'全部帳號':cname(selectedCat);const items=vault.records.filter(r=>(selectedCat==='all'||r.category===selectedCat)&&(member==='all'||r.member===member)&&[r.title,r.username,r.note].some(s=>String(s||'').toLowerCase().includes(q))).sort((a,b)=>a.title.localeCompare(b.title,'zh-Hant'));$('records').innerHTML=items.length?items.map(card).join(''):'<div class="empty">🌱 還沒有符合條件的帳號，點選「新增帳號」開始整理。</div>';bindCards($('records'));}
 function renderMembers(){$('members').innerHTML=vault.members.map(m=>`<div class="member"><span class="ricon">${iconMarkup(m.icon||'person','md',m.name)}</span><span class="rinfo"><strong>${esc(m.name)}</strong><small>${vault.records.filter(r=>r.member===m.id).length} 筆帳號</small></span></div>`).join('');}
 function renderDue(){const items=vault.records.filter(r=>r.due&&r.due<=today());$('dueList').innerHTML=items.length?items.map(card).join(''):'<div class="empty">🌷 目前沒有到期需要檢查的帳號。</div>';bindCards($('dueList'));}
-$('search').oninput=()=>{batchSelected.clear();renderCats();renderRecords();if(smartOpen)refreshSmart()};$('memberFilter').onchange=()=>{batchSelected.clear();renderCats();renderRecords();if(smartOpen)refreshSmart()};
-function openEdit(id=null){const r=id?vault.records.find(x=>x.id===id):null;$('editHeading').textContent=r?'編輯帳號':'新增帳號';$('editId').value=r?.id||'';$('rTitle').value=r?.title||'';$('rUser').value=r?.username||'';$('rPassword').value=r?.password||'';$('rPassword').type='password';$('rTransactionPassword').value=r?.transactionPassword||'';$('rTransactionPassword').type='password';$('rTransactionChanged').value=r?.transactionChanged||'';$('rUrl').value=r?.url||'';$('rChanged').value=r?.changed||today();$('rDue').value=r?.due||'';$('rNote').value=r?.note||'';$('rSecurityQuestion').value=r?.securityQuestion||'';$('rSecurityAnswer').value=r?.securityAnswer||'';$('rSecurityAnswer').type='password';$('rSecurityPin').value=r?.securityPin||'';$('rSecurityPin').type='password';$('rSecurityPinChanged').value=r?.securityPinChanged||'';$('rRecoveryContact').value=r?.recoveryContact||'';$('rRecoveryCodes').value=r?.recoveryCodes||'';$('rRecoveryCodes').classList.remove('recovery-visible');$('toggleRecoveryCodes').textContent='顯示';document.querySelectorAll('[data-toggle-secret]').forEach(b=>b.textContent='顯示');renderSelects();$('rMember').value=vault.members.some(m=>m.id===(r?.member||'self'))?(r?.member||'self'):(vault.members[0]?.id||'');$('rCategory').value=r?.category||(selectedCat==='all'?'other':selectedCat);$('rCategorySearch').value='';editSuggestionDismissed=false;filterEditCategories();$('editCategoryAdvice').classList.add('hidden');$('advancedSecurity').open=false;markEditPristine();$('editDialog').showModal();$('editDialog').querySelector('.dialogbody').scrollTop=0;refreshEditAdvice();}
+$('search').oninput=renderRecords;$('memberFilter').onchange=renderRecords;
+function openEdit(id=null){const r=id?vault.records.find(x=>x.id===id):null;$('editHeading').textContent=r?'編輯帳號':'新增帳號';$('editId').value=r?.id||'';$('rTitle').value=r?.title||'';$('rUser').value=r?.username||'';$('rPassword').value=r?.password||'';$('rPassword').type='password';$('rTransactionPassword').value=r?.transactionPassword||'';$('rTransactionPassword').type='password';$('rTransactionChanged').value=r?.transactionChanged||'';$('rUrl').value=r?.url||'';$('rChanged').value=r?.changed||today();$('rDue').value=r?.due||'';$('rNote').value=r?.note||'';$('rSecurityQuestion').value=r?.securityQuestion||'';$('rSecurityAnswer').value=r?.securityAnswer||'';$('rSecurityAnswer').type='password';$('rSecurityPin').value=r?.securityPin||'';$('rSecurityPin').type='password';$('rSecurityPinChanged').value=r?.securityPinChanged||'';$('rRecoveryContact').value=r?.recoveryContact||'';$('rRecoveryCodes').value=r?.recoveryCodes||'';$('rRecoveryCodes').classList.remove('recovery-visible');$('toggleRecoveryCodes').textContent='顯示';document.querySelectorAll('[data-toggle-secret]').forEach(b=>b.textContent='顯示');renderSelects();$('rMember').value=r?.member||'self';$('rCategory').value=r?.category||(selectedCat==='all'?'other':selectedCat);$('advancedSecurity').open=false;markEditPristine();$('editDialog').showModal();}
 $('addRecord').onclick=()=>openEdit();$('togglePassword').onclick=()=>{$('rPassword').type=$('rPassword').type==='password'?'text':'password'};
 $('toggleTransactionPassword').onclick=()=>{const field=$('rTransactionPassword');const visible=field.type==='password';field.type=visible?'text':'password';$('toggleTransactionPassword').textContent=visible?'隱藏':'顯示'};
 document.querySelectorAll('[data-toggle-secret]').forEach(button=>button.onclick=()=>{const el=$(button.dataset.toggleSecret);if(!el)return;el.type=el.type==='password'?'text':'password';button.textContent=el.type==='password'?'顯示':'隱藏'});
@@ -445,7 +207,7 @@ async function saveRecordFromForm(){const id=$('editId').value;const old=id?vaul
 const securityPinChanged=$('rSecurityPinChanged').value||((old?.securityPin||'')===securityPin?(old?.securityPinChanged||''):(securityPin?today():''));
 const securityPinHistory=structuredClone(old?.securityPinHistory||[]);
 if(old&&(old.securityPin||'')!==securityPin&&old.securityPin){securityPinHistory.unshift({password:old.securityPin,changed:old.securityPinChanged||'',savedAt:new Date().toISOString()})}
-if(!vault.members.some(m=>m.id===$('rMember').value)||!vault.categories.some(c=>c.id===$('rCategory').value))return notify('請重新選擇有效的家庭成員與分類');const r={id:id||uid(),title:$('rTitle').value.trim(),member:$('rMember').value,category:$('rCategory').value,username:$('rUser').value.trim(),password,transactionPassword,transactionChanged,transactionHistory,securityQuestion:$('rSecurityQuestion').value.trim(),securityAnswer:$('rSecurityAnswer').value,securityPin,securityPinChanged,securityPinHistory,recoveryContact:$('rRecoveryContact').value.trim(),recoveryCodes:$('rRecoveryCodes').value.trim(),url:$('rUrl').value.trim(),changed,due:$('rDue').value,note:$('rNote').value.trim(),history,createdAt:old?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};if(!r.title)return notify('請填寫名稱');const before=old?structuredClone(old):null;if(old)Object.assign(old,r);else vault.records.push(r);try{await persist();$('editDialog').close();render();notify('已安全儲存於本機')}catch(ex){if(old)Object.assign(old,before);else vault.records=vault.records.filter(x=>x.id!==r.id);notify('儲存失敗：'+ex.message)}}
+const r={id:id||uid(),title:$('rTitle').value.trim(),member:$('rMember').value,category:$('rCategory').value,username:$('rUser').value.trim(),password,transactionPassword,transactionChanged,transactionHistory,securityQuestion:$('rSecurityQuestion').value.trim(),securityAnswer:$('rSecurityAnswer').value,securityPin,securityPinChanged,securityPinHistory,recoveryContact:$('rRecoveryContact').value.trim(),recoveryCodes:$('rRecoveryCodes').value.trim(),url:$('rUrl').value.trim(),changed,due:$('rDue').value,note:$('rNote').value.trim(),history,createdAt:old?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};if(!r.title)return notify('請填寫名稱');const before=old?structuredClone(old):null;if(old)Object.assign(old,r);else vault.records.push(r);try{await persist();$('editDialog').close();render();notify('已安全儲存於本機')}catch(ex){if(old)Object.assign(old,before);else vault.records=vault.records.filter(x=>x.id!==r.id);notify('儲存失敗：'+ex.message)}}
 function secretText(secret){return secret?'••••••••':'未設定'}
 function secretRow(secret,id){return `<div class="secret"><code id="${id}">${secretText(secret)}</code>${secret?`<button class="soft sm" data-show="${id}">顯示</button><button class="soft sm" data-copy="${id}">複製</button>`:''}</div>`;}
 function recordSecretValue(r,id){if(id==='current')return r.password||'';if(id==='transactionCurrent')return r.transactionPassword||'';if(id==='securityAnswer')return r.securityAnswer||'';if(id==='securityPin')return r.securityPin||'';if(id==='recoveryCodes')return r.recoveryCodes||'';if(/^pinhist\d+$/.test(id))return r.securityPinHistory?.[Number(id.slice(7))]?.password||'';if(/^transhist\d+$/.test(id))return r.transactionHistory?.[Number(id.slice(9))]?.password||'';if(/^hist\d+$/.test(id))return r.history?.[Number(id.slice(4))]?.password||'';return '';}
@@ -469,7 +231,7 @@ function downloadFile(obj){const blob=encryptedBlob(obj),url=URL.createObjectURL
 async function backupEnvelope(){
  if(!vault||!activeProfileId)throw Error('請先解鎖自己的保險箱');
  if(!await settleCurrentWrites())throw Error('目前有儲存尚未完成，請稍後再試');
- const obj=await readPersistedEnvelope(activeProfileId);if(envelopeRaw(obj)!==envelopeRaw(getEnvelope()))throw Error('其他分頁已更新保險箱，請重新解鎖後再備份');if(!validateEnvelope(obj))throw Error('本機尚無有效的加密備份資料');
+ const obj=getEnvelope();if(!validateEnvelope(obj))throw Error('本機尚無有效的加密備份資料');
  // Verify that the persisted ciphertext is decryptable with the current active key,
  // and that the latest saved snapshot matches the currently unlocked vault.
  const raw=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(obj.iv)},masterKey,unb64(obj.data));
@@ -491,86 +253,10 @@ $('shareBackup').onclick=async()=>{
  }catch(e){if(e.name==='AbortError')return;notify('分享未完成：'+e.message)}
 };
 
-async function restoreObject(obj){
- if(!await settleCurrentWrites())throw Error('本機資料尚未儲存成功，已取消還原');
- if(!validateEnvelope(obj))throw Error('不是有效的拾光加密備份');
- const restoreProfile=activeProfileId;
- if(!restoreProfile)throw Error('請先選擇要還原的本機使用者');
- const pass=prompt('請輸入備份檔原本的主密碼，用於解密驗證：');
- if(pass===null)return;
- const parsed=await dec(obj,pass);
- if(restoreProfile!==activeProfileId)throw Error('還原期間使用者已切換');
- // Read the authoritative persisted envelope, not a possibly stale tab cache.
- const old=await readPersistedEnvelope(restoreProfile).catch(e=>{if(getEnvelope())throw e;return null}), prior=old?JSON.stringify(old):null;
- const summary=`備份驗證成功：${parsed.data.records.length} 筆帳號、${parsed.data.members.length} 位成員。\n還原將覆蓋此使用者目前的資料及密碼歷史。\n舊資料會先保留在本裝置的加密安全副本（不是雲端備份）。確定繼續？`;
- if(!confirm(summary))return;
- // The restore must fail rather than overwriting changes made in another tab.
- if(envelopeRaw(getEnvelope())!==envelopeRaw(old))throw Error('其他分頁已修改保險箱，請重新解鎖後再還原');
- if(prior&&prior!==JSON.stringify(obj)){
-  const rollbackKey='shiguang-vault-restore-safety-'+restoreProfile+'-'+Date.now()+'-'+crypto.randomUUID();
-  try{await safeWrite(rollbackKey,prior);const roundtrip=globalThis.indexedDB?await idbValue('get',rollbackKey):localStorage.getItem(rollbackKey);if(roundtrip!==prior)throw Error('無法驗證安全副本')}
-  catch{throw Error('無法安全保存還原前資料，已取消還原。請先匯出現有加密備份。')}
- }
- try{await atomicEnvelopeWrite(restoreProfile,obj,old)}
- catch(err){
-  // Do not replace in-memory data if durable verification failed.
-  // An on-disk copy might have been written: try to restore the old envelope.
-  if(old){try{const actual=await readPersistedEnvelope(restoreProfile);if(envelopeRaw(actual)===envelopeRaw(obj))await atomicEnvelopeWrite(restoreProfile,old,obj)}catch{throw Error('還原驗證失敗，請保留安全副本及目前網站資料。'+err.message)}}
-  throw err;
- }
- vault=parsed.data;resetBatch();const upgradedCategories=ensureBuiltInCategories(vault);masterKey=parsed.key;encryptionSalt=parsed.salt;
- if(upgradedCategories){try{await persist()}catch(error){
-  let rollbackFailure=null;
-  if(old){try{const actual=await readPersistedEnvelope(restoreProfile);if(envelopeRaw(actual)===envelopeRaw(getEnvelope()))await atomicEnvelopeWrite(restoreProfile,old,actual)}catch(e){rollbackFailure=e}}
-  // Stop presenting uncommitted imported content as the current vault.
-  vault=null;masterKey=null;encryptionSalt=null;resetBatch();clearSensitiveUI();gateMode();
-  if(rollbackFailure)throw Error('分類升級儲存失敗，原始加密資料無法確認復原；請保留網站資料與備份檔：'+rollbackFailure.message);
-  throw Error('備份還原後的分類升級失敗，請重新解鎖或重試：'+error.message)
- }}
- setCloudPrefs({lastLocalChange:new Date().toISOString(),lastExport:null});stopAutoBackup();updateCloudStatus();
- $('gate').classList.add('hidden');$('app').classList.remove('hidden');$('lockBtn').classList.remove('hidden');$('app').classList.remove('recovery-mode');
- render();tab('records');notify('加密備份已驗證並還原成功');return true;
-}
-for(const id of ['importFile','gateFile'])$(id).onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>12000000){notify('備份檔太大');return}try{await restoreObject(JSON.parse(await f.text()))}catch(err){if(vault){await lockAfterUncertainWrite()}notify('還原失敗：'+(err.name==='OperationError'?'主密碼不正確或備份已損壞':err.message))}finally{e.target.value=''}};
+async function restoreObject(obj){if(!await settleCurrentWrites())throw Error('本機資料尚未儲存成功，已取消還原');if(!validateEnvelope(obj))throw Error('不是有效的拾光加密備份');const pass=prompt('請輸入「備份檔」原本的主密碼，用於驗證加密資料：');if(pass===null)return;const restoreProfile=activeProfileId;const parsed=await dec(obj,pass);if(restoreProfile!==activeProfileId)throw Error('還原期間使用者已切換');if(!confirm('備份解密成功。還原會覆蓋目前裝置的全部帳號與密碼歷史，；系統將先保留現有加密安全副本。確定繼續？'))return;const prior=getEnvelope()?JSON.stringify(getEnvelope()):null;if(prior&&prior!==JSON.stringify(obj)){const rollbackKey='shiguang-vault-restore-safety-'+activeProfileId+'-'+Date.now()+'-'+crypto.randomUUID();try{await safeWrite(rollbackKey,prior)}catch{throw Error('無法儲存還原前的安全副本，已取消還原。請先匯出本機加密備份，勿清除網站資料。')}}await saveEnvelope(restoreProfile,obj);vault=parsed.data;masterKey=parsed.key;encryptionSalt=parsed.salt;setCloudPrefs({lastLocalChange:new Date().toISOString(),lastExport:null});stopAutoBackup();updateCloudStatus();$('gate').classList.add('hidden');$('app').classList.remove('hidden');$('lockBtn').classList.remove('hidden');$('app').classList.remove('recovery-mode');render();tab('records');notify('加密備份已成功還原');return true;}
+for(const id of ['importFile','gateFile'])$(id).onchange=async e=>{const f=e.target.files[0];if(!f)return;if(f.size>12000000){notify('備份檔太大');return}try{await restoreObject(JSON.parse(await f.text()))}catch(err){notify('還原失敗：'+(err.name==='OperationError'?'主密碼不正確或備份已損壞':err.message))}finally{e.target.value=''}};
 $('importBtn').onclick=()=>$('importFile').click();$('gateImport').onclick=()=>$('gateFile').click();
-$('changeMaster').onclick=async()=>{
- if(!vault||!activeProfileId)return notify('請先解鎖保險箱');
- if(!await settleCurrentWrites())return;
- const oldPassword=prompt('為防止他人誤操作，請先輸入目前的主密碼');if(oldPassword===null)return;
- try{await dec(getEnvelope(),oldPassword)}catch{return notify('目前主密碼不正確，未更動任何資料')}
- const p=prompt('輸入新的主密碼（至少 12 字元）');if(p===null)return;
- if(p.length<12)return notify('新主密碼至少需要 12 字元');
- const p2=prompt('再次輸入新的主密碼');if(p!==p2)return notify('兩次輸入不一致');
- if(p===oldPassword)return notify('新主密碼不可與原主密碼相同');
- if(!confirm('舊備份仍需使用舊主密碼。變更後請立即重新匯出加密備份並妥善保存。確定更換？'))return;
- const oldKey=masterKey,oldSalt=encryptionSalt,oldEnvelope=getEnvelope();
- const newSalt=crypto.getRandomValues(new Uint8Array(16)),newKey=await deriveKey(p,newSalt);
- encryptionSalt=newSalt;masterKey=newKey;
- try{
-  await persist();
-  // Verify newly persisted encrypted envelope actually opens with new password.
-  await dec(await readPersistedEnvelope(activeProfileId),p);
-  notify('主密碼已安全變更；請立即重新備份');
- }catch(e){
-  masterKey=oldKey;encryptionSalt=oldSalt;
-  try{
-   if(oldEnvelope){
-    const actual=await readPersistedEnvelope(activeProfileId);
-    if(envelopeRaw(actual)!==envelopeRaw(oldEnvelope)){
-     // Only restore if the new ciphertext was produced by this tab; never
-     // overwrite a different tab's successful edit.
-     if(!staleProfiles.has(activeProfileId)){
-      const newPlain=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(actual.iv)},newKey,unb64(actual.data)).catch(()=>null);
-      if(newPlain)await atomicEnvelopeWrite(activeProfileId,oldEnvelope,actual);
-      else throw Error('磁碟資料與本次變更不符，禁止覆蓋');
-     }
-    }
-   }
-  }catch{await lockAfterUncertainWrite();notify('主密碼變更未完成，無法安全自動還原。請勿清除網站資料：'+e.message);return}
-  await lockAfterUncertainWrite();
-  notify('主密碼變更未完成，已鎖定保險箱，請重新解鎖確認：'+e.message);
- }
-};
+$('changeMaster').onclick=async()=>{if(saveChains.get(activeProfileId))await saveChains.get(activeProfileId);const p=prompt('輸入新的主密碼（至少 12 字元）');if(p===null)return;if(p.length<12)return notify('至少 12 字元');const p2=prompt('再次輸入新的主密碼');if(p!==p2)return notify('兩次輸入不一致');if(!confirm('更換主密碼後，舊加密備份檔仍使用舊密碼。請產生一份新的加密檔，並自行存入 Google Drive。確定更換？'))return;const newSalt=crypto.getRandomValues(new Uint8Array(16)),newKey=await deriveKey(p,newSalt);const oldKey=masterKey,oldSalt=encryptionSalt;encryptionSalt=newSalt;masterKey=newKey;try{await persist();notify('主密碼已變更；請立即重新備份')}catch(e){masterKey=oldKey;encryptionSalt=oldSalt;notify('主密碼更換失敗：'+e.message)}};
 // V1.7.9: OAuth-free offline backup. Import/export is implemented above.
 $('showRecovery').onclick=()=>{$('recoveryGuide').classList.toggle('hidden');if(!$('recoveryGuide').classList.contains('hidden'))$('recoveryGuide').scrollIntoView({behavior:'smooth',block:'nearest'})};
 
@@ -580,13 +266,6 @@ async function inspectStorage(){
  try{if(navigator.storage?.estimate){const x=await navigator.storage.estimate();rows.push('網站儲存估計：'+Math.round((x.usage||0)/1024)+' KB / 約 '+Math.round((x.quota||0)/1024/1024)+' MB')}else rows.push('此瀏覽器不提供容量估計')}catch(e){rows.push('無法查詢容量：'+e.message)}
  rows.push('目前使用者：'+(activeProfileId?'已選擇':'尚未選擇'));
  rows.push('加密保險箱：'+(getEnvelope()?'存在':'本機尚無資料'));
- if(activeProfileId){
-  const name=keyName();
-  try{const fromDb=globalThis.indexedDB?await idbValue('get',name):null;
-   const fromLegacy=localStorage.getItem(name);
-   rows.push('目前使用者加密檔位置：'+(fromDb?'IndexedDB':fromLegacy?'舊版 localStorage':'未找到'));
-  }catch(e){rows.push('加密檔位置查詢失敗：'+e.message)}
- }
  rows.push('系統不會自動清除任何資料。');
  $('storageHealth').textContent=rows.join('\n');
 }
@@ -663,22 +342,4 @@ if('serviceWorker' in navigator && location.protocol==='https:'){
  });
 }
 
-function showProfileLoadFailure(e){
- console.error('保險箱啟動失敗',e);
- // Error must be visible outside the hidden create-profile form.
- $('profilePicker').classList.remove('hidden');$('gate').classList.add('hidden');$('app').classList.add('hidden');
- $('createProfile').disabled=true;$('profileCreateForm').classList.add('hidden');
- $('profileLoadReason').textContent='詳細原因：'+String(e?.message||e||'未知的本機儲存錯誤');
- $('profileLoadAlert').classList.remove('hidden');
- notify('讀取失敗；請查看頁面中的詳細原因，勿清除網站資料');
-}
-$('retryProfileLoad').onclick=async()=>{
- const button=$('retryProfileLoad');button.disabled=true;button.textContent='重新讀取中…';
- try{
-  // A transient blocked/failed IndexedDB open must not poison later attempts.
-  indexedDbReady=null;
-  await initProfiles();
- }catch(e){showProfileLoadFailure(e)}
- finally{button.disabled=false;button.textContent='重新讀取原有保險箱'}
-};
-initProfiles().catch(showProfileLoadFailure);
+initProfiles().catch(e=>creationError('讀取本機使用者失敗：'+e.message));

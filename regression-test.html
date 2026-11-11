@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8"><title>Isolated regression test</title><pre id="results">RUNNING</pre><iframe src="index.html" id="site" style="width:390px;height:840px"></iframe>
+<script>
+const out=document.getElementById('results'), iframe=document.getElementById('site');let logs=[];
+function log(s){logs.push(s);out.textContent=logs.join('\n')}
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+async function until(f,ms=15000){const start=Date.now();while(Date.now()-start<ms){if(f())return;await delay(100)}throw Error('Timed out: '+f.toString().slice(0,70))}
+async function test(){const w=iframe.contentWindow,d=w.document,el=id=>d.getElementById(id),check=(x,s)=>{if(!x)throw Error(s);log('PASS '+s)};
+await until(()=>el('createProfile')?.onclick);await delay(200);
+check(!el('profilePicker').classList.contains('hidden'),'profile picker ready');
+el('createProfile').click();el('newProfileName').value='Regression Test';el('profileCreateForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await until(()=>!el('gate').classList.contains('hidden'));
+check(el('gateTitle').textContent.includes('建立'),'profile create');
+el('master').value='A-long-testing-master-password!';el('masterConfirm').value=el('master').value;el('gateBtn').click();await until(()=>!el('app').classList.contains('hidden'),20000);check(true,'encrypted vault creation');
+await w.eval("(async()=>{openEdit(); $('rTitle').value='Netflix';$('rUser').value='example@example.test';$('rPassword').value='secret123';$('rCategory').value='stream'; await saveRecordFromForm();})()");
+check(w.eval('vault.records.length')===1,'add record');
+await w.eval("(async()=>{openEdit(vault.records[0].id);$('rTitle').value='Netflix modified';$('rPassword').value='newpassword'; await saveRecordFromForm();})()");
+check(w.eval('vault.records[0].history.length')===1,'edit preserves password history');
+const env=await w.eval('backupEnvelope()');check(env?.data?.length>100,'encrypted backup');
+const decoded=await w.eval("(async e=> (await dec(e,'A-long-testing-master-password!')).data.records[0].title)")(env);check(decoded==='Netflix modified','backup decrypt correctness');
+let rejected=false;try{await w.eval("(async e=>(await dec(e,'wrong password')).data)")(env)}catch{rejected=true}check(rejected,'incorrect password rejected');
+await w.eval("(async()=>{await lock();await unlock('A-long-testing-master-password!')})()");check(w.eval('vault.records[0].title')==='Netflix modified','lock and unlock retains record');
+const saved=await w.eval('readPersistedEnvelope(activeProfileId)');check(saved.data===env.data,'backup matches storage');
+check(w.eval('vault.categories.length')>=19,'all categories retained');log('ALL PASSED');
+}
+iframe.addEventListener('load',()=>test().catch(e=>log('FAILED '+String(e?.stack||e))));
+</script>

@@ -219,9 +219,48 @@ $('gateBtn').onclick=async()=>{const p=$('master').value;$('gateError').classLis
 $('lockBtn').onclick=lock;
 ['click','keydown','touchstart'].forEach(ev=>document.addEventListener(ev,()=>{if(vault)lastActive=Date.now()},{passive:true}));setInterval(()=>{if(vault&&Date.now()-lastActive>300000)lock()},15000);
 function mname(id){return vault.members.find(x=>x.id===id)?.name||'未分類'}function cname(id){return vault.categories.find(x=>x.id===id)?.name||'其他'}function cat(id){return vault.categories.find(x=>x.id===id)||DEFAULT_CATS[7]}
-function tab(t){hideSearchSuggestions();if(t!=='records')resetBatch();if(!vault&&t!=='settings')return;for(const name of ['records','members','due','settings'])$(name+'Page').classList.toggle('hidden',name!==t);document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));if(t==='due')renderDue();if(t==='members')renderMembers();window.scrollTo({top:0,behavior:'smooth'});}
+function tab(t){hideSearchSuggestions();if(t!=='records'){categorySidebarCollapsed=true;syncCategorySidebar();resetBatch();}if(!vault&&t!=='settings')return;for(const name of ['records','members','due','settings'])$(name+'Page').classList.toggle('hidden',name!==t);document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x.dataset.tab===t));if(t==='due')renderDue();if(t==='members')renderMembers();window.scrollTo({top:0,behavior:'smooth'});}
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tab(b.dataset.tab));document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>tab(b.dataset.go));
-function syncCategorySidebar(){const sidebar=$('categorySidebar'),toggle=$('sidebarToggle'),collapse=$('sidebarCollapseBtn'),backdrop=$('sidebarBackdrop');if(!sidebar||!toggle)return;const mobile=globalThis.innerWidth<=980;sidebar.classList.toggle('collapsed',categorySidebarCollapsed);toggle.setAttribute('aria-expanded',String(!categorySidebarCollapsed));toggle.textContent=categorySidebarCollapsed?'顯示分類':(mobile?'分類已開啟':'收合分類');if(collapse)collapse.textContent=(mobile?'隱藏':'收合');if(backdrop){backdrop.classList.toggle('hidden',!(mobile&&!categorySidebarCollapsed));backdrop.classList.toggle('visible',mobile&&!categorySidebarCollapsed);}}
+function syncCategorySidebar(){
+ const sidebar=$('categorySidebar'),toggle=$('sidebarToggle'),collapse=$('sidebarCollapseBtn'),backdrop=$('sidebarBackdrop');
+ if(!sidebar||!toggle)return;
+ const mobile=globalThis.innerWidth<=980;
+ const open=mobile&&!categorySidebarCollapsed&&vault&&!$('recordsPage').classList.contains('hidden');
+ sidebar.classList.toggle('collapsed',categorySidebarCollapsed);
+ sidebar.inert=!!(mobile&&!open);
+ sidebar.setAttribute('aria-hidden',String(mobile&&!open));
+ toggle.setAttribute('aria-expanded',String(!categorySidebarCollapsed));
+ toggle.textContent=categorySidebarCollapsed?'顯示分類':(mobile?'分類已開啟':'收合分類');
+ if(collapse)collapse.textContent=(mobile?'關閉':'收合');
+ const mobileTab=$('mobileCategoryTab');
+ if(mobileTab){mobileTab.setAttribute('aria-expanded',String(!!open));mobileTab.classList.toggle('active',!!open);mobileTab.setAttribute('aria-label',open?'關閉帳號分類':'開啟帳號分類')}
+ if(backdrop){backdrop.classList.toggle('hidden',!open);backdrop.classList.toggle('visible',!!open)}
+ document.body.classList.toggle('category-sheet-open',!!open);
+ if(!open&&document.activeElement&&sidebar.contains(document.activeElement))document.activeElement.blur();
+}
+function closeMobileCategories(restoreFocus=false){
+ if(categorySidebarCollapsed)return;
+ categorySidebarCollapsed=true;syncCategorySidebar();
+ if(restoreFocus&&globalThis.innerWidth<=980&&vault&&!$('recordsPage').classList.contains('hidden'))$('mobileCategoryTab').focus({preventScroll:true});
+}
+function syncMobileViewport(){
+ const vv=globalThis.visualViewport;
+ const height=vv?.height||globalThis.innerHeight;
+ const offset=vv?Math.max(0,globalThis.innerHeight-vv.height-vv.offsetTop):0;
+ const root=document.documentElement.style;
+ root.setProperty('--vault-keyboard-offset',`${Math.round(offset)}px`);
+ root.setProperty('--vault-visible-height',`${Math.round(height)}px`);
+ // Keep the inline search list inside the visible area when an on-screen keyboard appears.
+ const search=$('search');const suggestions=$('searchSuggestions');
+ if(search&&suggestions&&!suggestions.classList.contains('hidden')){
+  const rect=search.getBoundingClientRect();
+  const available=Math.max(100,Math.floor((vv?.offsetTop||0)+height-rect.bottom-20));
+  suggestions.style.maxHeight=`${Math.min(400,available)}px`;
+ }
+}
+if(globalThis.visualViewport){globalThis.visualViewport.addEventListener('resize',syncMobileViewport);globalThis.visualViewport.addEventListener('scroll',syncMobileViewport)}
+syncMobileViewport();
+
 
 function render(){if(!vault)return;updateBatchControls();updateCloudStatus();syncCategorySidebar();updateSearchUi();$('activeProfileBadge').textContent=(selectedProfile()?.name||'');$('countAll').textContent=vault.records.length;$('countMember').textContent=vault.members.length;$('countDue').textContent=vault.records.filter(r=>r.due&&r.due<=today()).length;renderSelects();renderCats();renderRecords();renderMembers();renderDue();if(smartOpen)refreshSmart();}
 // 分類計數與清單共用同一個成員/搜尋條件，避免卡片數字與實際清單不一致。
@@ -244,20 +283,37 @@ const CAT_GROUPS=[
 let openCatGroups=new Set(['finance']);
 function groupForCat(id){return CAT_GROUPS.find(g=>g.ids.includes(id))?.id||'misc'}
 function categoryTile(c){return `<button type="button" class="category ${selectedCat===c.id?'selected':''}" data-cat="${esc(c.id)}" aria-pressed="${selectedCat===c.id}"><span class="art" style="background:${/^#[0-9a-fA-F]{6}$/.test(c.color)?c.color:'#eaf0f6'}">${iconMarkup(c.icon,'lg',c.name)}</span><small>${esc(c.name)}</small><span class="num">${matchingRecords(c.id).length} 筆</span></button>`}
+// 分類搜尋只影響分類視窗，不會修改帳號搜尋詞或加密資料。
+function normalizeCategoryQuery(value){return String(value||'').trim().normalize('NFKC').toLocaleLowerCase('zh-TW')}
 function renderCats(){
  const root=$('categories');
- const q=$('search').value.trim();
+ if(!vault||!root)return;
+ const accountQuery=$('search').value.trim();
+ const categoryQuery=normalizeCategoryQuery($('categorySearch')?.value);
  const builtin=new Set(CAT_GROUPS.flatMap(g=>g.ids));
  const groups=CAT_GROUPS.map(g=>({...g,cats:vault.categories.filter(c=>g.id==='misc'?(g.ids.includes(c.id)||!builtin.has(c.id)):g.ids.includes(c.id))}));
- root.innerHTML=`<div class="cat-all">${categoryTile({id:'all',name:'全部分類',icon:'all',color:'#eaf0f6'})}</div><div class="cat-groups">${groups.filter(g=>g.cats.length).map(g=>{
+ const visible=groups.map(g=>({...g,cats:g.cats.filter(c=>!categoryQuery||normalizeCategoryQuery(c.name).includes(categoryQuery)||normalizeCategoryQuery(g.label).includes(categoryQuery))})).filter(g=>g.cats.length);
+ const totalMatched=visible.reduce((count,g)=>count+g.cats.length,0);
+ const status=$('categorySearchCount');
+ if(status)status.textContent=categoryQuery?`找到 ${totalMatched} 個分類（全部 ${vault.categories.length} 個）`:`共 ${vault.categories.length} 個分類`;
+ const clear=$('clearCategorySearch');
+ if(clear)clear.classList.toggle('hidden',!categoryQuery);
+ root.innerHTML=`<div class="cat-all">${categoryTile({id:'all',name:'全部分類',icon:'all',color:'#eaf0f6'})}</div>${visible.length?`<div class="cat-groups">${visible.map(g=>{
   const count=g.cats.reduce((sum,c)=>sum+matchingRecords(c.id).length,0);
   const active=g.cats.some(c=>c.id===selectedCat);
-  const expanded=openCatGroups.has(g.id)||active||Boolean(q);
-  return `<details class="cat-group" data-group="${g.id}" ${expanded?'open':''}><summary><span class="cat-group-icon">${iconMarkup(g.icon,'md',g.label)}</span><span class="cat-group-label">${esc(g.label)}<small>${g.cats.length} 個分類</small></span><span class="cat-group-count">${count} 筆</span><span class="cat-group-arrow" aria-hidden="true">⌄</span></summary><div class="cat-group-grid">${g.cats.map(categoryTile).join('')}</div></details>`;
- }).join('')}</div>`;
+  const expanded=openCatGroups.has(g.id)||active||Boolean(accountQuery)||Boolean(categoryQuery);
+  return `<details class="cat-group" data-group="${esc(g.id)}" ${expanded?'open':''}><summary><span class="cat-group-icon">${iconMarkup(g.icon,'md',g.label)}</span><span class="cat-group-label">${esc(g.label)}<small>${g.cats.length} 個分類</small></span><span class="cat-group-count">${count} 筆</span><span class="cat-group-arrow" aria-hidden="true">⌄</span></summary><div class="cat-group-grid">${g.cats.map(categoryTile).join('')}</div></details>`;
+ }).join('')}</div>`:`<p class="category-empty">找不到符合「${esc($('categorySearch')?.value.trim())}」的分類，請改用其他關鍵字。</p>`}`;
  root.querySelectorAll('details.cat-group').forEach(d=>d.addEventListener('toggle',()=>{if(d.open)openCatGroups.add(d.dataset.group);else openCatGroups.delete(d.dataset.group)}));
- root.querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>{selectedCat=b.dataset.cat;batchSelected.clear();if(selectedCat!=='all')openCatGroups.add(groupForCat(selectedCat));if(globalThis.innerWidth<=980){categorySidebarCollapsed=true;syncCategorySidebar()}renderCats();renderRecords();if(smartOpen)refreshSmart()});
+ root.querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>{
+  selectedCat=b.dataset.cat;batchSelected.clear();
+  if(selectedCat!=='all')openCatGroups.add(groupForCat(selectedCat));
+  if(globalThis.innerWidth<=980)closeMobileCategories();
+  renderCats();renderRecords();if(smartOpen)refreshSmart();
+ });
 }
+$('categorySearch').addEventListener('input',renderCats);
+$('clearCategorySearch').onclick=()=>{$('categorySearch').value='';renderCats();$('categorySearch').focus()};
 
 function renderSelects(){const mf=$('memberFilter');const old=mf.value;mf.innerHTML='<option value="all">所有家人</option>'+vault.members.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');mf.value=[...mf.options].some(o=>o.value===old)?old:'all';$('rMember').innerHTML=vault.members.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');$('rCategory').innerHTML=vault.categories.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');const previous=$('batchCategory').value;$('batchCategory').innerHTML='<option value="">請選擇目標分類</option>'+vault.categories.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');if(vault.categories.some(c=>c.id===previous))$('batchCategory').value=previous;}
 function card(r){const c=cat(r.category);return `<button class="record" data-rec="${esc(r.id)}"><span class="ricon" style="background:${/^#[0-9a-fA-F]{6}$/.test(c.color)?c.color:'#eef4f8'}">${iconMarkup(c.icon,'md',c.name)}</span><span class="rinfo"><strong>${esc(r.title)}</strong><small><span class="owner-tag">${esc(vault.members.find(m=>m.id===r.member)?.icon&& !SVG_ICONS[vault.members.find(m=>m.id===r.member)?.icon]?vault.members.find(m=>m.id===r.member).icon:'👤')} ${esc(mname(r.member))}</span><span class="record-account-text">${esc(r.username||'未填帳號')}${r.due&&r.due<=today()?' · 待檢查':''}</span></small></span><span class="chevron">${iconMarkup('arrow','sm')}</span></button>`;}
@@ -339,7 +395,40 @@ function refreshSmart(){
 }
 function refreshSmartCount(){$('smartCount').textContent=`已勾選 ${smartSelected.size}／${smartSuggestions.length} 筆`;$('smartApply').disabled=smartSaving||!smartSelected.size;$('smartSelectAll').disabled=smartSaving||!smartSuggestions.length;$('smartClear').disabled=smartSaving||!smartSelected.size}
 $('smartToggle').onclick=()=>{if(smartSaving)return;smartOpen=!smartOpen;smartSelected.clear();$('smartPanel').classList.toggle('hidden',!smartOpen);$('smartToggle').setAttribute('aria-pressed',String(smartOpen));if(smartOpen){if(batchMode){batchMode=false;batchSelected.clear();renderRecords()}refreshSmart()}};
-$('sidebarToggle').onclick=()=>{categorySidebarCollapsed=!categorySidebarCollapsed;syncCategorySidebar()};$('sidebarCollapseBtn').onclick=()=>{categorySidebarCollapsed=true;syncCategorySidebar()};$('sidebarBackdrop').onclick=()=>{categorySidebarCollapsed=true;syncCategorySidebar()};globalThis.addEventListener('resize',()=>{if(globalThis.innerWidth>980&&categorySidebarCollapsed===true)categorySidebarCollapsed=false;syncCategorySidebar()});
+$('mobileCategoryTab').onclick=()=>{
+ if(!vault||globalThis.innerWidth>980)return;
+ if(!categorySidebarCollapsed){closeMobileCategories(true);return}
+ if($('recordsPage').classList.contains('hidden'))tab('records');
+ hideSearchSuggestions();if(document.activeElement===$('search'))$('search').blur();
+ categorySidebarCollapsed=false;syncCategorySidebar();
+ $('sidebarCollapseBtn').focus({preventScroll:true});
+};
+$('sidebarToggle').onclick=()=>{categorySidebarCollapsed=!categorySidebarCollapsed;syncCategorySidebar()};
+$('sidebarCollapseBtn').onclick=()=>closeMobileCategories(true);
+$('sidebarBackdrop').onclick=()=>closeMobileCategories(true);
+document.addEventListener('keydown',e=>{
+ if(e.key==='Escape'&&globalThis.innerWidth<=980&&!categorySidebarCollapsed&&!document.querySelector('dialog[open]')){e.preventDefault();closeMobileCategories(true)}
+});
+let lastSidebarMobile=globalThis.innerWidth<=980;
+globalThis.addEventListener('resize',()=>{
+ const mobile=globalThis.innerWidth<=980;
+ if(mobile!==lastSidebarMobile){categorySidebarCollapsed=mobile;lastSidebarMobile=mobile}
+ syncCategorySidebar();syncMobileViewport();
+});
+// A rotation changes the width/height relationship, not just the keyboard's visual viewport.
+let lastOrientation=globalThis.innerWidth>globalThis.innerHeight?'landscape':'portrait';
+function onVaultOrientationChange(){
+ const current=globalThis.innerWidth>globalThis.innerHeight?'landscape':'portrait';
+ if(current!==lastOrientation){
+  lastOrientation=current;
+  if(globalThis.innerWidth<=980&&!categorySidebarCollapsed)closeMobileCategories(false);
+  hideSearchSuggestions();
+  if(document.activeElement===$('categorySearch'))document.activeElement.blur();
+ }
+ syncMobileViewport();
+}
+globalThis.addEventListener('orientationchange',()=>requestAnimationFrame(onVaultOrientationChange));
+globalThis.addEventListener('resize',onVaultOrientationChange);
 $('smartClose').onclick=closeSmart;
 $('smartSelectAll').onclick=()=>{if(smartSaving)return;smartSuggestions.forEach(x=>smartSelected.add(x.record.id));refreshSmart()};
 $('smartClear').onclick=()=>{if(smartSaving)return;smartSelected.clear();refreshSmart()};
@@ -366,7 +455,7 @@ function renderMembers(){
 }
 function renderDue(){const items=vault.records.filter(r=>r.due&&r.due<=today());$('dueList').innerHTML=items.length?items.map(card).join(''):'<div class="empty">🌷 目前沒有到期需要檢查的帳號。</div>';bindCards($('dueList'));}
 function updateSearchUi(){const btn=$('clearSearch');if(!btn)return;btn.classList.toggle('hidden',!$('search').value.trim())}
-function hideSearchSuggestions(){const box=$('searchSuggestions');if(box){box.classList.add('hidden');$('search').setAttribute('aria-expanded','false')}}
+function hideSearchSuggestions(){const box=$('searchSuggestions');if(box){box.classList.add('hidden');box.style.removeProperty('max-height');$('search').setAttribute('aria-expanded','false')}}
 function saveRecentSearch(term){const t=String(term||'').trim().slice(0,90);if(!t)return;recentSearches=[t,...recentSearches.filter(x=>x!==t)].slice(0,5)}
 function applySearchTerm(term){$('search').value=term;updateSearchUi();batchSelected.clear();renderCats();renderRecords();if(smartOpen)refreshSmart();hideSearchSuggestions()}
 // Search every matching record. Large sets are revealed in pages, never silently truncated.
@@ -395,7 +484,7 @@ function renderSearchSuggestions(){
   (items.length?items.map((x,i)=>`<button type="button" class="search-suggestion" data-suggest="${i}"><span class="search-suggestion-name">${esc(x.name)}</span>${x.kind==='record'?`<span class="search-suggestion-meta"><span class="search-owner">${esc(SVG_ICONS[x.memberIcon]?'👤':x.memberIcon)} ${esc(x.owner)}</span> · ${esc(x.category)}</span>`:`<span class="search-suggestion-meta">${esc(x.meta)}</span>`}</button>`).join(''):'<div class="search-suggestion-empty">沒有符合條件的帳號或分類，請嘗試其他關鍵字。</div>')+
   (shown.length<matches.length?`<button class="search-load-more" type="button" data-search-more>顯示更多（目前 ${shown.length} / ${matches.length} 筆）</button>`:'')+
   `<div class="search-suggestion-footer">${q?`符合帳號共 ${matches.length} 筆，已顯示 ${shown.length} 筆；結果可向下捲動。`:'搜尋紀錄只保留至本次解鎖結束，不會儲存至雲端。'}${member!=='all'?' · 目前套用家人篩選':''}</div>`;
- box.classList.remove('hidden');$('search').setAttribute('aria-expanded','true');
+ box.classList.remove('hidden');$('search').setAttribute('aria-expanded','true');syncMobileViewport();
  box.querySelectorAll('[data-suggest]').forEach(b=>b.addEventListener('click',()=>{
   const item=items[Number(b.dataset.suggest)];if(!item||!vault)return;
   if(item.kind==='category'){selectedCat=item.id;saveRecentSearch(item.name);$('search').value='';applySearchTerm('');renderCats();renderRecords();if(globalThis.innerWidth<=980){categorySidebarCollapsed=true;syncCategorySidebar()}}
@@ -407,7 +496,7 @@ function renderSearchSuggestions(){
  };
 }
 
-$('search').oninput=()=>{searchVisibleCount=SEARCH_RESULT_PAGE_SIZE;if(selectedCat!=='all')selectedCat='all';updateSearchUi();batchSelected.clear();renderCats();renderRecords();if(smartOpen)refreshSmart();renderSearchSuggestions()};$('search').onfocus=renderSearchSuggestions;$('search').onkeydown=e=>{if(e.key==='Escape'){hideSearchSuggestions();$('search').blur()}else if(e.key==='Enter'){e.preventDefault();saveRecentSearch($('search').value);hideSearchSuggestions();$('search').blur()}};document.addEventListener('pointerdown',e=>{if(!e.target.closest('.searchbox'))hideSearchSuggestions()});$('clearSearch').onclick=()=>{$('search').value='';updateSearchUi();batchSelected.clear();renderCats();renderRecords();if(smartOpen)refreshSmart();$('search').focus();renderSearchSuggestions()};$('memberFilter').onchange=()=>{searchVisibleCount=SEARCH_RESULT_PAGE_SIZE;batchSelected.clear();renderCats();renderRecords();if(smartOpen)refreshSmart();renderSearchSuggestions()};
+$('search').oninput=()=>{if(globalThis.innerWidth<=980&&!categorySidebarCollapsed)closeMobileCategories();searchVisibleCount=SEARCH_RESULT_PAGE_SIZE;if(selectedCat!=='all')selectedCat='all';updateSearchUi();batchSelected.clear();renderCats();renderRecords();if(smartOpen)refreshSmart();renderSearchSuggestions()};$('search').onfocus=renderSearchSuggestions;$('search').onkeydown=e=>{if(e.key==='Escape'){hideSearchSuggestions();$('search').blur()}else if(e.key==='Enter'){e.preventDefault();saveRecentSearch($('search').value);hideSearchSuggestions();$('search').blur()}};document.addEventListener('pointerdown',e=>{if(!e.target.closest('.searchbox'))hideSearchSuggestions()});$('clearSearch').onclick=()=>{$('search').value='';updateSearchUi();batchSelected.clear();renderCats();renderRecords();if(smartOpen)refreshSmart();$('search').focus();renderSearchSuggestions()};$('memberFilter').onchange=()=>{searchVisibleCount=SEARCH_RESULT_PAGE_SIZE;batchSelected.clear();renderCats();renderRecords();if(smartOpen)refreshSmart();renderSearchSuggestions()};
 function openEdit(id=null){const r=id?vault.records.find(x=>x.id===id):null;$('editHeading').textContent=r?'編輯帳號':'新增帳號';$('editId').value=r?.id||'';$('rTitle').value=r?.title||'';$('rUser').value=r?.username||'';$('rPassword').value=r?.password||'';$('rPassword').type='password';$('rTransactionPassword').value=r?.transactionPassword||'';$('rTransactionPassword').type='password';$('rTransactionChanged').value=r?.transactionChanged||'';$('rUrl').value=r?.url||'';$('rChanged').value=r?.changed||today();$('rDue').value=r?.due||'';$('rNote').value=r?.note||'';$('rSecurityQuestion').value=r?.securityQuestion||'';$('rSecurityAnswer').value=r?.securityAnswer||'';$('rSecurityAnswer').type='password';$('rSecurityPin').value=r?.securityPin||'';$('rSecurityPin').type='password';$('rSecurityPinChanged').value=r?.securityPinChanged||'';$('rRecoveryContact').value=r?.recoveryContact||'';$('rRecoveryCodes').value=r?.recoveryCodes||'';$('rRecoveryCodes').classList.remove('recovery-visible');$('toggleRecoveryCodes').textContent='顯示';document.querySelectorAll('[data-toggle-secret]').forEach(b=>b.textContent='顯示');renderSelects();$('rMember').value=vault.members.some(m=>m.id===(r?.member||'self'))?(r?.member||'self'):(vault.members[0]?.id||'');$('rCategory').value=r?.category||(selectedCat==='all'?'other':selectedCat);$('rCategorySearch').value='';editSuggestionDismissed=false;filterEditCategories();$('editCategoryAdvice').classList.add('hidden');$('advancedSecurity').open=false;markEditPristine();$('editDialog').showModal();$('editDialog').querySelector('.dialogbody').scrollTop=0;refreshEditAdvice();}
 $('addRecord').onclick=()=>openEdit();$('togglePassword').onclick=()=>{$('rPassword').type=$('rPassword').type==='password'?'text':'password'};
 $('toggleTransactionPassword').onclick=()=>{const field=$('rTransactionPassword');const visible=field.type==='password';field.type=visible?'text':'password';$('toggleTransactionPassword').textContent=visible?'隱藏':'顯示'};

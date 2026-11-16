@@ -214,3 +214,121 @@ html,body{max-width:100%;overflow-x:clip}
 .search-load-more:hover,.search-load-more:focus-visible{background:#dcebf5}
 .search-suggestion-heading{position:sticky;top:-7px;background:#fff;z-index:1;border-bottom:1px solid #edf1f3;padding:11px}
 @media(max-width:480px){.search-suggestions{max-height:min(64dvh,540px)}.search-suggestion-meta{font-size:11px}}
+
+/* V1.9.5 – tablet/mobile bottom navigation category sheet */
+.mobile-category-tab{display:none!important}
+@media (max-width:980px){
+  .bottom{z-index:60;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;padding-left:max(6px,env(safe-area-inset-left));padding-right:max(6px,env(safe-area-inset-right));}
+  .bottom button{display:flex;align-items:center;justify-content:center;min-width:0;gap:5px;padding:7px 2px;min-height:52px;}
+  .bottom button .navicon{width:34px;height:32px;}
+  .mobile-category-tab{display:flex!important}
+  .mobile-category-tab.active{color:var(--main);font-weight:800}
+  .mobile-category-tab.active .navicon{background:#dde9f2;color:#355676;box-shadow:0 8px 16px rgba(76,107,146,.15)}
+  /* The classification control belongs in the bottom bar, not above search. */
+  .sidebar-launch{display:none!important}
+  .records-search-wrap{flex:1 1 100%;}
+  .category-sidebar,
+  .category-sidebar.collapsed{
+    position:fixed;left:0;right:0;top:auto;bottom:0;
+    width:100%;max-width:100%;height:auto;max-height:min(81dvh,780px);
+    padding:16px 16px calc(24px + env(safe-area-inset-bottom));
+    overflow-y:auto;overscroll-behavior:contain;
+    border-radius:26px 26px 0 0;
+    border:1px solid #e3eaf0;background:#fff;
+    box-shadow:0 -18px 50px rgba(29,52,75,.22);
+    opacity:1;transition:transform .22s ease;
+    z-index:75;display:block!important;
+  }
+  .category-sidebar{transform:translateY(0);pointer-events:auto;}
+  .category-sidebar.collapsed{transform:translateY(105%);pointer-events:none;}
+  .category-sidebar:before{content:"";display:block;width:44px;height:5px;border-radius:999px;background:#d9e2e9;margin:-5px auto 15px;}
+  .sidebar-head{top:-16px;margin-bottom:7px;align-items:center;}
+  .sidebar-head-actions .soft{min-width:60px;min-height:42px;}
+  .sidebar-categories .cat-group-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .sidebar-categories .cat-all{max-width:100%}
+  .sidebar-hint{margin:8px 0 12px}
+  .sidebar-backdrop{z-index:65;}
+  .records-layout{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:520px){
+  .sidebar-categories .cat-group-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sidebar-categories .cat-group-grid .category{min-height:98px}
+  .category-sidebar,.category-sidebar.collapsed{max-height:85dvh;padding-left:12px;padding-right:12px}
+  .bottom button{font-size:11px}
+  .bottom button .navicon{width:32px;height:31px}
+}
+@media (min-width:981px){.mobile-category-tab{display:none!important}}
+@media(prefers-reduced-motion:reduce){.category-sidebar,.category-sidebar.collapsed{transition:none}}
+
+/* V1.9.6: searchable category sheet - scoped to category UI. */
+.category-search-panel{display:flex;align-items:center;gap:8px;padding:5px 9px 5px 12px;border:1px solid #dce5ed;border-radius:14px;background:#f9fbfd;margin:9px 0 5px;min-height:49px}
+.category-search-panel:focus-within{border-color:#789abb;box-shadow:0 0 0 3px #e4eef6}
+.category-search-symbol{font-size:26px;color:#71869c;line-height:1}
+.category-search-panel input{width:100%;min-width:0;flex:1;padding:8px 2px;border:0!important;box-shadow:none!important;outline:none;background:transparent;font-size:15px}
+.category-search-clear{background:#e7eef4;color:#48657f;padding:8px 11px;border-radius:9px;font-size:12px;font-weight:700;white-space:nowrap}
+.category-search-count{font-size:12px;color:#76899b;margin:6px 2px 12px}
+.category-empty{font-size:13px;color:#718093;text-align:center;background:#f8fafc;border:1px dashed #dce5ed;padding:20px 12px;border-radius:14px;line-height:1.7}
+@media(max-width:980px){.category-search-panel{position:sticky;top:60px;z-index:3;background:#f9fbfd}.category-search-count{position:relative}.category-sidebar{scroll-padding-top:122px}}
+
+/* V1.9.7: keyboard-safe modal category sheet and accessible navigation. */
+@media (max-width:980px){
+ body.category-sheet-open{overflow:hidden;overscroll-behavior:none;touch-action:pan-x pan-y}
+ .category-sidebar,.category-sidebar.collapsed{
+   bottom:var(--vault-keyboard-offset,0px);
+   max-height:min(calc(var(--vault-visible-height,100dvh) - 18px),780px);
+   -webkit-overflow-scrolling:touch;
+   touch-action:pan-y;
+   contain:layout style;
+ }
+ .category-sidebar .sidebar-head{top:-16px;}
+ .category-sidebar:focus-within{outline:none;}
+ .category-sidebar .category:focus-visible,.sidebar-head button:focus-visible,.mobile-category-tab:focus-visible{outline:3px solid #467ca8;outline-offset:2px;}
+ .sidebar-backdrop{touch-action:none;}
+}
+@media(max-width:520px){.category-sidebar,.category-sidebar.collapsed{max-height:min(calc(var(--vault-visible-height,100dvh) - 12px),740px)}}
+
+
+/* V1.9.8: portrait/landscape, virtual keyboard, mobile search & editing sheets */
+:root{--vault-keyboard-offset:0px;--vault-visible-height:100dvh}
+@media(max-width:980px){
+ .category-sidebar,.category-sidebar.collapsed{max-height:min(calc(var(--vault-visible-height) - 16px),740px);}
+ .search-suggestions{overscroll-behavior:contain;max-height:min(58dvh,400px);-webkit-overflow-scrolling:touch;}
+ .bottom{padding-bottom:calc(9px + env(safe-area-inset-bottom));}
+ .bottom button{min-width:0;min-height:48px;}
+ .records-search-wrap,.searchbox,.record,.rinfo{min-width:0;}
+}
+@media(max-width:700px){
+ dialog{bottom:var(--vault-keyboard-offset);max-height:calc(var(--vault-visible-height) - 6px);}
+ dialog .dialogbody{max-height:calc(var(--vault-visible-height) - 6px);}
+ .dialogtop{top:-18px;}
+ .dialogbody .actions{bottom:0;}
+ .search-suggestions{max-height:min(48dvh,360px);}
+}
+@media(max-width:980px) and (orientation:landscape) and (max-height:600px){
+ .top{padding-top:8px;padding-bottom:6px}
+ .welcome{padding-top:8px;padding-bottom:8px}
+ .welcome h1{font-size:22px;line-height:1.25}
+ .welcome .star{width:44px;height:44px;flex:none}
+ .stats{margin-bottom:12px;gap:7px}
+ .stat{padding:8px 11px;border-radius:13px}
+ .stat b{font-size:20px;margin-bottom:2px}
+ .bottom{padding-top:4px;padding-bottom:max(3px,env(safe-area-inset-bottom))}
+ .bottom button{min-height:40px;font-size:10px;gap:2px}
+ .bottom button .navicon{width:27px;height:25px}
+ .bottom button .navicon svg{width:17px;height:17px}
+ .category-sidebar,.category-sidebar.collapsed{border-radius:18px 18px 0 0;padding-top:10px;max-height:calc(var(--vault-visible-height) - 6px)}
+ .category-sidebar:before{margin:0 auto 6px}
+ .category-sidebar .sidebar-head{top:-10px}
+ .category-search-panel{top:47px}
+ .search-suggestions{max-height:calc(var(--vault-visible-height) - 145px)}
+ dialog,dialog .dialogbody{max-height:calc(var(--vault-visible-height) - 4px)}
+ .dialogbody{padding-top:10px}
+ .dialogtop{padding-top:10px}
+}
+@media(max-width:420px){
+ .bottom{grid-template-columns:repeat(5,minmax(0,1fr));}
+ .bottom button{padding-inline:0;}
+ .search-suggestion{flex-wrap:wrap}
+ .search-suggestion-name{flex-basis:58%;}
+ .search-suggestion-meta{max-width:100%;overflow-wrap:anywhere;white-space:normal;text-align:right;}
+}

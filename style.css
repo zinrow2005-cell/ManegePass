@@ -191,3 +191,15 @@ html,body{max-width:100%;overflow-x:clip}
 
 /* V1.9.1: contextual search suggestions, never saved to storage */
 .searchbox{position:relative;z-index:14}.search-suggestions{position:absolute;left:0;right:0;top:calc(100% + 7px);z-index:80;background:#fff;border:1px solid #dce5ea;border-radius:16px;box-shadow:0 18px 44px rgba(37,60,80,.18);max-height:min(52dvh,360px);overflow-y:auto;overscroll-behavior:contain;padding:7px}.search-suggestions.hidden{display:none!important}.search-suggestion-heading{font-size:11px;font-weight:800;letter-spacing:.4px;color:#718296;padding:8px 11px 5px}.search-suggestion{width:100%;display:flex;align-items:center;gap:9px;text-align:left;background:transparent;color:#31475b;border-radius:11px;min-height:44px;padding:9px 11px}.search-suggestion:hover,.search-suggestion:focus-visible{background:#eef5f8;outline:0}.search-suggestion-name{min-width:0;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13px;font-weight:650}.search-suggestion-meta{flex:none;font-size:11px;color:#7a8c9d}.search-suggestion-empty{padding:11px;font-size:12px;color:#7a8c9d}.search-suggestion-footer{font-size:11px;color:#82919e;padding:8px 11px 5px;border-top:1px solid #edf1f3}
+
+/* V1.9.3 — Family label editing and clear owners in search results */
+.owner-tag{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:#e8f0f6;color:#385b79;font-weight:750;margin-right:8px;font-size:12px;max-width:100%;overflow-wrap:anywhere}
+.record-account-text{display:inline-block;vertical-align:middle;overflow-wrap:anywhere}
+.member-edit{min-width:60px;min-height:42px;flex:none}
+.member-emoji-picker{margin:14px 0;padding:14px;border:1px solid #e2eaf0;border-radius:16px;background:#f8fafb}
+.member-emoji-head{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:750;margin-bottom:12px}
+.member-emoji-preview{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:#e5eef5;font-size:26px}
+.member-emoji-choices{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:7px}
+.emoji-pick{display:grid;place-items:center;min-height:43px;border:1px solid #dfe9f1;border-radius:12px;background:#fff;font-size:23px}
+.emoji-pick[aria-pressed="true"]{border:2px solid #54779b;background:#e7f1f8}
+@media(max-width:420px){.member-emoji-choices{grid-template-columns:repeat(6,minmax(0,1fr))}}

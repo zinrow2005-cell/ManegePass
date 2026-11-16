@@ -203,3 +203,14 @@ html,body{max-width:100%;overflow-x:clip}
 .emoji-pick{display:grid;place-items:center;min-height:43px;border:1px solid #dfe9f1;border-radius:12px;background:#fff;font-size:23px}
 .emoji-pick[aria-pressed="true"]{border:2px solid #54779b;background:#e7f1f8}
 @media(max-width:420px){.member-emoji-choices{grid-template-columns:repeat(6,minmax(0,1fr))}}
+
+/* V1.9.4: visible result counts, member tags, and progressive browsing without dropping matches. */
+.search-suggestions{max-height:min(65dvh,520px);-webkit-overflow-scrolling:touch;scrollbar-gutter:stable}
+.search-suggestion{min-height:48px;flex-wrap:wrap;align-content:center;row-gap:3px}
+.search-suggestion-name{flex:1 1 135px;white-space:normal;overflow-wrap:anywhere}
+.search-suggestion-meta{flex:0 1 auto;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:right}
+.search-owner{display:inline-block;padding:3px 7px;background:#eaf3f6;border-radius:7px;color:#385b71;font-weight:750}
+.search-load-more{display:block;width:100%;margin:5px 0;border-radius:11px;background:#e9f1f7;color:#38536f;padding:13px;font-size:13px;font-weight:750}
+.search-load-more:hover,.search-load-more:focus-visible{background:#dcebf5}
+.search-suggestion-heading{position:sticky;top:-7px;background:#fff;z-index:1;border-bottom:1px solid #edf1f3;padding:11px}
+@media(max-width:480px){.search-suggestions{max-height:min(64dvh,540px)}.search-suggestion-meta{font-size:11px}}
